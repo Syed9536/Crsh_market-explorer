@@ -1,6 +1,3 @@
-
-
-
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 
@@ -2926,70 +2923,12 @@ function normalizeDbMarket(
 
 async function getResolvedMarkets() {
   if (!sql) {
-    console.error(
-      "CRSHMARKET HISTORY: Database connection missing."
+    throw new Error(
+      "DATABASE_URL / POSTGRES_URL is missing. Market history cannot be loaded."
     );
-
-    return [];
   }
 
   try {
-    /*
-     * Repair older rows that were already resolved but whose
-     * status was later overwritten by an incomplete snapshot.
-     * A non-null resolved_at is permanent history.
-     */
-    await sql`
-      UPDATE markets
-      SET
-        status = 'resolved',
-        resolved_at = COALESCE(
-          resolved_at,
-          last_seen_at,
-          first_seen_at,
-          NOW()
-        )
-      WHERE
-        resolved_at IS NOT NULL
-        AND LOWER(COALESCE(status, '')) NOT IN (
-          'resolved',
-          'cancelled',
-          'canceled',
-          'settled',
-          'complete',
-          'completed',
-          'finalized'
-        )
-    `;
-
-    /*
-     * Also repair rows whose latest raw snapshot says resolved,
-     * even when the relational status column was not updated.
-     * Use the stored observation time as the safe fallback instead
-     * of assuming the raw timestamp format.
-     */
-    await sql`
-      UPDATE markets
-      SET
-        status = 'resolved',
-        resolved_at = COALESCE(
-          resolved_at,
-          last_seen_at,
-          first_seen_at,
-          NOW()
-        )
-      WHERE
-        LOWER(COALESCE(raw_data->'market'->>'status', raw_data->>'status', '')) IN (
-          'resolved',
-          'cancelled',
-          'canceled',
-          'settled',
-          'complete',
-          'completed',
-          'finalized'
-        )
-    `;
-
     const rows =
       await sql`
         SELECT
@@ -3045,7 +2984,6 @@ async function getResolvedMarkets() {
             last_seen_at,
             first_seen_at
           ) DESC
-        LIMIT 5000
       `;
 
     return rows.map(
