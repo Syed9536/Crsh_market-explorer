@@ -18,7 +18,7 @@ type Market = {
 
   winning_option_id?: number | null;
 
-  current_pools_usdc?: unknown;
+  current_pools_usdc?: any;
   current_pools_usd?: number[] | null;
 
   yes_pool_usd?: number | null;
@@ -42,7 +42,7 @@ type Market = {
 
   expected_winnings?: number | null;
 
-  raw_data?: unknown;
+  raw_data?: any;
 
   stream_url?: string | null;
   stream_embed_url?: string | null;
@@ -66,7 +66,7 @@ type LiveStream = {
 
     winningOptionId?: number | null;
 
-    currentPoolsUsdc?: unknown;
+    currentPoolsUsdc?: any;
     currentPoolsUsd?: number[] | null;
 
     yesPoolUsd?: number | null;
@@ -76,12 +76,13 @@ type LiveStream = {
 
     expectedWinnings?: number | null;
 
-    [key: string]: unknown;
+    [key: string]: any;
   };
 };
 
 type ApiResponse = {
   status: string;
+
   value: {
     activeStreams: LiveStream[];
     resolvedMarkets: Market[];
@@ -91,51 +92,75 @@ type ApiResponse = {
 const REFRESH_MS = 2000;
 const HISTORY_CACHE_KEY = "crsh-market-history-v1";
 
-const usdFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+const usdFormatter = new Intl.NumberFormat(
+  "en-US",
+  {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }
+);
 
-function formatUsd(value: unknown): string {
+function formatUsd(
+  value: any
+): string {
   const n = Number(value);
 
-  if (!Number.isFinite(n)) {
+  if (
+    !Number.isFinite(n)
+  ) {
     return "$0.00";
   }
 
   return usdFormatter.format(n);
 }
 
-function formatDate(value?: string | null): string {
+function formatDate(
+  value?: string | null
+): string {
   if (!value) {
     return "Unavailable";
   }
 
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return "Unavailable";
   }
 
-  return date.toLocaleString("en-US", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
+  return date.toLocaleString(
+    "en-US",
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }
+  );
 }
 
-function normalizeStatus(status?: string): string {
-  return String(status ?? "").toLowerCase();
+function normalizeStatus(
+  status?: string
+): string {
+  return String(
+    status ?? ""
+  ).toLowerCase();
 }
 
-function isResolved(status?: string): boolean {
-  const value = normalizeStatus(status);
+function isResolved(
+  status?: string
+): boolean {
+  const value =
+    normalizeStatus(status);
 
   return (
     value === "resolved" ||
@@ -144,7 +169,9 @@ function isResolved(status?: string): boolean {
   );
 }
 
-function getWinnerLabel(winner?: number | null): string {
+function getWinnerLabel(
+  winner?: number | null
+): string {
   if (winner === 0) {
     return "YES";
   }
@@ -156,32 +183,55 @@ function getWinnerLabel(winner?: number | null): string {
   return "N/A";
 }
 
-function getPool(market: Market, side: 0 | 1): number {
+function getPool(
+  market: Market,
+  side: 0 | 1
+): number {
   if (
     side === 0 &&
-    market.yes_pool_usd !== null &&
-    market.yes_pool_usd !== undefined
+    market.yes_pool_usd !==
+      null &&
+    market.yes_pool_usd !==
+      undefined
   ) {
-    return Number(market.yes_pool_usd);
+    return Number(
+      market.yes_pool_usd
+    );
   }
 
   if (
     side === 1 &&
-    market.no_pool_usd !== null &&
-    market.no_pool_usd !== undefined
+    market.no_pool_usd !==
+      null &&
+    market.no_pool_usd !==
+      undefined
   ) {
-    return Number(market.no_pool_usd);
+    return Number(
+      market.no_pool_usd
+    );
   }
 
-  if (Array.isArray(market.current_pools_usd)) {
-    return Number(market.current_pools_usd[side] ?? 0);
+  if (
+    Array.isArray(
+      market.current_pools_usd
+    )
+  ) {
+    return Number(
+      market.current_pools_usd[
+        side
+      ] ?? 0
+    );
   }
 
   return 0;
 }
 
-function getLivePool(stream: LiveStream, side: 0 | 1): number {
-  const market = stream.market;
+function getLivePool(
+  stream: LiveStream,
+  side: 0 | 1
+): number {
+  const market =
+    stream.market;
 
   if (!market) {
     return 0;
@@ -189,100 +239,108 @@ function getLivePool(stream: LiveStream, side: 0 | 1): number {
 
   if (
     side === 0 &&
-    market.yesPoolUsd !== null &&
-    market.yesPoolUsd !== undefined
+    market.yesPoolUsd !==
+      null &&
+    market.yesPoolUsd !==
+      undefined
   ) {
-    return Number(market.yesPoolUsd);
+    return Number(
+      market.yesPoolUsd
+    );
   }
 
   if (
     side === 1 &&
-    market.noPoolUsd !== null &&
-    market.noPoolUsd !== undefined
+    market.noPoolUsd !==
+      null &&
+    market.noPoolUsd !==
+      undefined
   ) {
-    return Number(market.noPoolUsd);
+    return Number(
+      market.noPoolUsd
+    );
   }
 
-  if (Array.isArray(market.currentPoolsUsd)) {
-    return Number(market.currentPoolsUsd[side] ?? 0);
+  if (
+    Array.isArray(
+      market.currentPoolsUsd
+    )
+  ) {
+    return Number(
+      market.currentPoolsUsd[
+        side
+      ] ?? 0
+    );
   }
 
   return 0;
 }
 
 function getPlaybackUrl(
-  stream: unknown,
+  stream: any,
   kind: "originalUrl" | "embedUrl"
 ): string | null {
-  if (!stream || typeof stream !== "object") {
-    return null;
-  }
-
-  const source = stream as Record<string, unknown>;
-  const rawData =
-    source.raw_data && typeof source.raw_data === "object"
-      ? (source.raw_data as Record<string, unknown>)
-      : null;
-
-  const recastPlayback =
-    source.recastPlayback && typeof source.recastPlayback === "object"
-      ? (source.recastPlayback as Record<string, unknown>)
-      : null;
-
-  const rawRecastPlayback =
-    rawData?.recastPlayback &&
-    typeof rawData.recastPlayback === "object"
-      ? (rawData.recastPlayback as Record<string, unknown>)
-      : null;
-
   const direct =
-    source[kind] ??
-    recastPlayback?.[kind] ??
-    rawData?.[kind] ??
-    rawRecastPlayback?.[kind];
+    stream?.[kind] ??
+    stream?.recastPlayback?.[kind] ??
+    stream?.raw_data?.[kind] ??
+    stream?.raw_data?.recastPlayback?.[kind];
 
   return typeof direct === "string" && direct.trim()
     ? direct.trim()
     : null;
 }
 
-function getStreamUrl(stream: LiveStream | Market): string | null {
-  const source = stream as unknown as Record<string, unknown>;
-
-  const direct = source.stream_url ?? source.streamUrl;
+function getStreamUrl(
+  stream: LiveStream | Market
+): string | null {
+  const direct =
+    (stream as any).stream_url ??
+    (stream as any).streamUrl;
 
   if (typeof direct === "string" && direct.trim()) {
     return direct.trim();
   }
 
-  return getPlaybackUrl(stream, "originalUrl");
+  return getPlaybackUrl(
+    stream,
+    "originalUrl"
+  );
 }
 
-function getResolutionProofUrl(market: Market): string | null {
-  if (!market?.market_id) {
-    return null;
-  }
-
-  const marketId = String(market.market_id).trim();
+function getResolutionProofUrl(
+  market: Market
+): string | null {
+  const marketId =
+    String(
+      market.market_id ??
+      ""
+    ).trim();
 
   if (!marketId) {
     return null;
   }
 
-  if (market.resolution_proof_url?.trim()) {
-    return market.resolution_proof_url.trim();
-  }
-
-  const crshMarketId =
-    `143:0x968279784d780c02a79b1c58ad69aaa832f09342:${marketId}`;
-
-  return `https://app.crshmarket.com/market-activity?market=${encodeURIComponent(
-    crshMarketId
-  )}`;
+  /*
+   * Resolution proof is the CRSHMARKET market itself.
+   * It must never fall back to the source stream/VOD.
+   *
+   * Example:
+   * https://app.crshmarket.com/market-activity?market=143%3A0x...%3A11690
+   */
+  return (
+    `https://app.crshmarket.com/market-activity?market=${encodeURIComponent(
+      marketId
+    )}`
+  );
 }
 
-function calculateLivePercentage(yes: number, no: number) {
-  const total = yes + no;
+function calculateLivePercentage(
+  yes: number,
+  no: number
+) {
+  const total =
+    yes + no;
 
   if (total <= 0) {
     return {
@@ -292,30 +350,75 @@ function calculateLivePercentage(yes: number, no: number) {
   }
 
   return {
-    yes: (yes / total) * 100,
-    no: (no / total) * 100,
+    yes:
+      (yes / total) * 100,
+    no:
+      (no / total) * 100,
   };
 }
 
 export default function HomePage() {
-  const [data, setData] = useState<ApiResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"live" | "history">("live");
-  const [search, setSearch] = useState("");
-  const [darkMode, setDarkMode] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [
+    data,
+    setData,
+  ] = useState<ApiResponse | null>(
+    null
+  );
 
-  const historyCacheRef = useRef<Market[]>([]);
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    error,
+    setError,
+  ] = useState<string | null>(
+    null
+  );
+
+  const [
+    activeTab,
+    setActiveTab,
+  ] = useState<
+    "live" | "history"
+  >("live");
+
+  const [
+    search,
+    setSearch,
+  ] = useState("");
+
+  const [
+    darkMode,
+    setDarkMode,
+  ] = useState(true);
+
+  const [
+    lastUpdated,
+    setLastUpdated,
+  ] = useState<Date | null>(
+    null
+  );
+
+  const historyCacheRef =
+    useRef<Market[]>([]);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("crsh-theme");
+    const saved =
+      window.localStorage.getItem(
+        "crsh-theme"
+      );
 
-    if (saved === "light") {
+    if (
+      saved === "light"
+    ) {
       setDarkMode(false);
     }
 
-    if (saved === "dark") {
+    if (
+      saved === "dark"
+    ) {
       setDarkMode(true);
     }
   }, []);
@@ -323,210 +426,291 @@ export default function HomePage() {
   useEffect(() => {
     window.localStorage.setItem(
       "crsh-theme",
-      darkMode ? "dark" : "light"
+      darkMode
+        ? "dark"
+        : "light"
     );
   }, [darkMode]);
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(HISTORY_CACHE_KEY);
+      const saved =
+        window.localStorage.getItem(
+          HISTORY_CACHE_KEY
+        );
 
       if (!saved) {
         return;
       }
 
-      const parsed: unknown = JSON.parse(saved);
+      const parsed =
+        JSON.parse(saved);
 
       if (!Array.isArray(parsed)) {
         return;
       }
 
-      const unique = new Map<string, Market>();
+      const unique =
+        new Map<string, Market>();
 
-      for (const item of parsed) {
-        if (
-          item &&
-          typeof item === "object" &&
-          "market_id" in item &&
-          typeof item.market_id === "string"
-        ) {
-          unique.set(item.market_id, item as Market);
-        }
-      }
-
-      historyCacheRef.current = Array.from(unique.values());
-    } catch (storageError) {
-      console.warn(
-        "Could not restore market history cache:",
-        storageError
-      );
-    }
-  }, []);
-
-  const fetchMarkets = useCallback(async (initial = false) => {
-    try {
-      if (initial) {
-        setLoading(true);
-      }
-
-      const response = await fetch("/api/markets", {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          "Cache-Control": "no-cache",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error ${response.status}`);
-      }
-
-      const json = (await response.json()) as ApiResponse;
-
-      if (json.status !== "success") {
-        throw new Error("Market API failed");
-      }
-
-      const incomingHistory = json.value?.resolvedMarkets ?? [];
-      const mergedHistory = new Map<string, Market>();
-
-      for (const market of [
-        ...historyCacheRef.current,
-        ...incomingHistory,
-      ]) {
+      for (const market of parsed) {
         if (market?.market_id) {
-          const key = String(market.market_id);
-          const existing = mergedHistory.get(key);
-
-          mergedHistory.set(
-            key,
-            existing ? { ...existing, ...market } : market
+          unique.set(
+            String(market.market_id),
+            market
           );
         }
       }
 
-      const stableHistory = Array.from(mergedHistory.values()).sort(
-        (a, b) => {
-          const aTime =
-            Date.parse(
-              a.resolved_at ??
-                a.credited_at ??
-                a.recorded_at ??
-                a.last_seen_at ??
-                ""
-            ) || 0;
-
-          const bTime =
-            Date.parse(
-              b.resolved_at ??
-                b.credited_at ??
-                b.recorded_at ??
-                b.last_seen_at ??
-                ""
-            ) || 0;
-
-          return bTime - aTime;
-        }
+      historyCacheRef.current =
+        Array.from(unique.values());
+    } catch (error) {
+      console.warn(
+        "Could not restore market history cache:",
+        error
       );
-
-      historyCacheRef.current = stableHistory;
-
-      try {
-        window.localStorage.setItem(
-          HISTORY_CACHE_KEY,
-          JSON.stringify(stableHistory.slice(0, 5000))
-        );
-      } catch (storageError) {
-        console.warn(
-          "Could not persist market history cache:",
-          storageError
-        );
-      }
-
-      setData({
-        ...json,
-        value: {
-          ...json.value,
-          resolvedMarkets: stableHistory,
-        },
-      });
-
-      setError(null);
-      setLastUpdated(new Date());
-    } catch (err) {
-      console.error(err);
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to load markets"
-      );
-    } finally {
-      setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    void fetchMarkets(true);
+  const fetchMarkets =
+    useCallback(
+      async (
+        initial = false
+      ) => {
+        try {
+          if (initial) {
+            setLoading(true);
+          }
 
-    const interval = window.setInterval(() => {
-      void fetchMarkets(false);
-    }, REFRESH_MS);
+          const response =
+            await fetch(
+              "/api/markets",
+              {
+                method: "GET",
+                cache: "no-store",
+                headers: {
+                  "Cache-Control":
+                    "no-cache",
+                },
+              }
+            );
+
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              `API error ${response.status}`
+            );
+          }
+
+          const json =
+            (await response.json()) as ApiResponse;
+
+          if (
+            json.status !==
+            "success"
+          ) {
+            throw new Error(
+              "Market API failed"
+            );
+          }
+
+          const incomingHistory =
+            json.value?.resolvedMarkets ?? [];
+
+          const mergedHistory =
+            new Map<string, Market>();
+
+          for (const market of [
+            ...historyCacheRef.current,
+            ...incomingHistory,
+          ]) {
+            if (market?.market_id) {
+              const key =
+                String(market.market_id);
+
+              const existing =
+                mergedHistory.get(key);
+
+              mergedHistory.set(
+                key,
+                existing
+                  ? { ...existing, ...market }
+                  : market
+              );
+            }
+          }
+
+          const stableHistory =
+            Array.from(
+              mergedHistory.values()
+            ).sort((a, b) => {
+              const aTime =
+                Date.parse(
+                  a.resolved_at ??
+                    a.credited_at ??
+                    a.recorded_at ??
+                    a.last_seen_at ??
+                    ""
+                ) || 0;
+
+              const bTime =
+                Date.parse(
+                  b.resolved_at ??
+                    b.credited_at ??
+                    b.recorded_at ??
+                    b.last_seen_at ??
+                    ""
+                ) || 0;
+
+              return bTime - aTime;
+            });
+
+          historyCacheRef.current =
+            stableHistory;
+
+          try {
+            window.localStorage.setItem(
+              HISTORY_CACHE_KEY,
+              JSON.stringify(
+                stableHistory.slice(0, 5000)
+              )
+            );
+          } catch (storageError) {
+            console.warn(
+              "Could not persist market history cache:",
+              storageError
+            );
+          }
+
+          setData({
+            ...json,
+            value: {
+              ...json.value,
+              resolvedMarkets: stableHistory,
+            },
+          });
+          setError(null);
+          setLastUpdated(
+            new Date()
+          );
+        } catch (
+          err
+        ) {
+          console.error(err);
+
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load markets"
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      []
+    );
+
+  useEffect(() => {
+    fetchMarkets(true);
+
+    const interval =
+      window.setInterval(
+        () => {
+          fetchMarkets(false);
+        },
+        REFRESH_MS
+      );
 
     return () => {
-      window.clearInterval(interval);
+      window.clearInterval(
+        interval
+      );
     };
   }, [fetchMarkets]);
 
-  const activeStreams = data?.value?.activeStreams ?? [];
-  const resolvedMarkets = data?.value?.resolvedMarkets ?? [];
+  const activeStreams =
+    data?.value
+      ?.activeStreams ?? [];
 
-  const filteredHistory = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  const resolvedMarkets =
+    data?.value
+      ?.resolvedMarkets ?? [];
 
-    if (!q) {
-      return resolvedMarkets;
-    }
+  const filteredHistory =
+    useMemo(() => {
+      const q =
+        search
+          .trim()
+          .toLowerCase();
 
-    return resolvedMarkets.filter((market) => {
-      return [
-        market.market_id,
-        market.title,
-        market.stream_title,
-        market.host_name,
-        market.status,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
-    });
-  }, [resolvedMarkets, search]);
+      if (!q) {
+        return resolvedMarkets;
+      }
 
-  const themeClass = darkMode ? "crsh-dark" : "crsh-light";
+      return resolvedMarkets.filter(
+        (market) => {
+          return [
+            market.market_id,
+            market.title,
+            market.stream_title,
+            market.host_name,
+            market.status,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(q);
+        }
+      );
+    },
+    [
+      resolvedMarkets,
+      search,
+    ]);
+
+  const themeClass =
+    darkMode
+      ? "crsh-dark"
+      : "crsh-light";
 
   return (
-    <main className={`crsh-app ${themeClass}`}>
+    <main
+      className={`crsh-app ${themeClass}`}
+    >
       <div className="crsh-shell">
+
         <header className="header">
           <div className="brand-wrap">
-            <div className="brand-icon">C</div>
+            <div className="brand-icon">
+              C
+            </div>
 
             <div>
               <div className="brand">
-                CRSH<span>MARKET</span>
+                CRSH
+                <span>
+                  MARKET
+                </span>
               </div>
 
-              <div className="brand-sub">MARKET EXPLORER</div>
+              <div className="brand-sub">
+                MARKET EXPLORER
+              </div>
             </div>
           </div>
 
           <div className="header-right">
+
             <button
               className="theme-toggle"
-              onClick={() => setDarkMode((value) => !value)}
+              onClick={() =>
+                setDarkMode(
+                  (value) =>
+                    !value
+                )
+              }
               aria-label="Toggle theme"
-              type="button"
             >
               <span
                 className={
@@ -557,21 +741,26 @@ export default function HomePage() {
         </header>
 
         <div className="subtitle">
-          Explore live prediction markets and browse complete market history.
+          Explore live prediction markets
+          and browse complete market history.
         </div>
 
         <div className="divider" />
 
         <div className="tabs-row">
           <div className="tabs">
+
             <button
               className={
                 activeTab === "live"
                   ? "tab active-green"
                   : "tab"
               }
-              onClick={() => setActiveTab("live")}
-              type="button"
+              onClick={() =>
+                setActiveTab(
+                  "live"
+                )
+              }
             >
               Live Markets
             </button>
@@ -582,15 +771,20 @@ export default function HomePage() {
                   ? "tab active-purple"
                   : "tab"
               }
-              onClick={() => setActiveTab("history")}
-              type="button"
+              onClick={() =>
+                setActiveTab(
+                  "history"
+                )
+              }
             >
               Market History
             </button>
+
           </div>
 
           <div className="update-text">
-            {activeTab === "live"
+            {activeTab ===
+            "live"
               ? `${activeStreams.length} active`
               : `${resolvedMarkets.length} historical`}
 
@@ -604,41 +798,70 @@ export default function HomePage() {
 
         {activeTab === "live" ? (
           <section>
+
             <div className="section-heading">
-              <h1>Live Markets</h1>
-              <p>Currently active prediction markets</p>
+              <h1>
+                Live Markets
+              </h1>
+
+              <p>
+                Currently active prediction
+                markets
+              </p>
             </div>
 
-            {loading && !data ? (
+            {loading &&
+            !data ? (
               <div className="loading-card">
                 <div className="spinner" />
-                <span>Loading live markets...</span>
+                <span>
+                  Loading live markets...
+                </span>
               </div>
             ) : error ? (
-              <div className="error-card">{error}</div>
-            ) : activeStreams.length === 0 ? (
-              <div className="empty-card">No active markets.</div>
+              <div className="error-card">
+                {error}
+              </div>
+            ) : activeStreams.length ===
+              0 ? (
+              <div className="empty-card">
+                No active markets.
+              </div>
             ) : (
               <div className="market-grid">
-                {activeStreams.map((stream, index) => (
-                  <LiveMarketCard
-                    key={
-                      stream.market?.marketId ??
-                      stream.id ??
-                      index
-                    }
-                    stream={stream}
-                  />
-                ))}
+                {activeStreams.map(
+                  (
+                    stream,
+                    index
+                  ) => (
+                    <LiveMarketCard
+                      key={
+                        stream.market
+                          ?.marketId ??
+                        stream.id ??
+                        index
+                      }
+                      stream={
+                        stream
+                      }
+                    />
+                  )
+                )}
               </div>
             )}
+
           </section>
         ) : (
           <section>
+
             <div className="section-heading">
-              <h1>Market History</h1>
+              <h1>
+                Market History
+              </h1>
+
               <p>
-                Opened, closed, recorded, credited and expected winnings
+                Opened, closed, recorded,
+                credited and expected winnings
               </p>
             </div>
 
@@ -646,38 +869,66 @@ export default function HomePage() {
               className="search"
               placeholder="Search markets, IDs, games or hosts..."
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) =>
+                setSearch(
+                  event.target.value
+                )
+              }
             />
 
-            {loading && !data ? (
+            {loading &&
+            !data ? (
               <div className="loading-card">
                 <div className="spinner" />
-                <span>Loading market history...</span>
+                <span>
+                  Loading market history...
+                </span>
               </div>
             ) : error ? (
-              <div className="error-card">{error}</div>
-            ) : filteredHistory.length === 0 ? (
-              <div className="empty-card">No matching markets.</div>
+              <div className="error-card">
+                {error}
+              </div>
+            ) : filteredHistory.length ===
+              0 ? (
+              <div className="empty-card">
+                No matching markets.
+              </div>
             ) : (
               <div className="history-list">
-                {filteredHistory.map((market) => (
-                  <HistoryCard
-                    key={market.market_id}
-                    market={market}
-                  />
-                ))}
+                {filteredHistory.map(
+                  (
+                    market
+                  ) => (
+                    <HistoryCard
+                      key={
+                        market.market_id
+                      }
+                      market={
+                        market
+                      }
+                    />
+                  )
+                )}
               </div>
             )}
+
           </section>
         )}
 
         <footer>
-          <span>CRSHMARKET</span>
-          <span>MARKET EXPLORER</span>
+          <span>
+            CRSHMARKET
+          </span>
+
+          <span>
+            MARKET EXPLORER
+          </span>
         </footer>
+
       </div>
 
       <style jsx global>{`
+
         * {
           box-sizing: border-box;
         }
@@ -750,7 +1001,11 @@ export default function HomePage() {
         }
 
         .crsh-shell {
-          width: min(1076px, calc(100% - 32px));
+          width: min(
+            1076px,
+            calc(100% - 32px)
+          );
+
           margin: 0 auto;
           padding-top: 58px;
           padding-bottom: 80px;
@@ -774,13 +1029,22 @@ export default function HomePage() {
           height: 40px;
           border: 1px solid #7114a4;
           border-radius: 11px;
+
           display: flex;
           align-items: center;
           justify-content: center;
+
           color: #b32aff;
           font-weight: 800;
           font-size: 16px;
-          background: rgba(104, 12, 156, 0.12);
+
+          background:
+            rgba(
+              104,
+              12,
+              156,
+              0.12
+            );
         }
 
         .brand {
@@ -811,22 +1075,29 @@ export default function HomePage() {
         .theme-toggle {
           height: 38px;
           padding: 4px;
+
           display: flex;
           align-items: center;
           gap: 2px;
+
           border-radius: 20px;
           border: 1px solid var(--border);
+
           background: var(--panel);
+
           cursor: pointer;
         }
 
         .theme-icon {
           width: 29px;
           height: 29px;
+
           display: flex;
           align-items: center;
           justify-content: center;
+
           border-radius: 50%;
+
           color: var(--muted);
           font-size: 13px;
         }
@@ -839,11 +1110,21 @@ export default function HomePage() {
         .live-status {
           height: 36px;
           padding: 0 15px;
+
           display: flex;
           align-items: center;
           gap: 8px;
-          border: 1px solid rgba(0, 216, 102, 0.35);
+
+          border: 1px solid
+            rgba(
+              0,
+              216,
+              102,
+              0.35
+            );
+
           border-radius: 20px;
+
           color: var(--green);
           font-size: 11px;
           white-space: nowrap;
@@ -854,7 +1135,14 @@ export default function HomePage() {
           height: 7px;
           border-radius: 50%;
           background: var(--green);
-          box-shadow: 0 0 8px rgba(0, 216, 102, 0.65);
+          box-shadow:
+            0 0 8px
+            rgba(
+              0,
+              216,
+              102,
+              0.65
+            );
         }
 
         .subtitle {
@@ -889,11 +1177,16 @@ export default function HomePage() {
           border: 0;
           background: transparent;
           color: var(--muted);
+
           padding: 10px 18px;
+
           border-radius: 8px;
+
           cursor: pointer;
+
           font-size: 12px;
           font-weight: 700;
+
           transition: 150ms ease;
         }
 
@@ -904,19 +1197,34 @@ export default function HomePage() {
         .active-green {
           background: var(--green);
           color: #001b0d;
-          box-shadow: 0 0 18px rgba(0, 216, 102, 0.16);
+          box-shadow:
+            0 0 18px
+            rgba(
+              0,
+              216,
+              102,
+              0.16
+            );
         }
 
         .active-purple {
           background: var(--purple);
           color: white;
-          box-shadow: 0 0 18px rgba(155, 25, 245, 0.22);
+          box-shadow:
+            0 0 18px
+            rgba(
+              155,
+              25,
+              245,
+              0.22
+            );
         }
 
         .update-text {
           display: flex;
           align-items: center;
           gap: 12px;
+
           color: var(--muted);
           font-size: 10px;
         }
@@ -944,20 +1252,38 @@ export default function HomePage() {
 
         .market-grid {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns:
+            repeat(
+              2,
+              minmax(0, 1fr)
+            );
           gap: 14px;
         }
 
         .market-card {
-          border: 1px solid rgba(154, 17, 96, 0.8);
+          border: 1px solid
+            rgba(
+              154,
+              17,
+              96,
+              0.8
+            );
+
           border-radius: 14px;
+
           background:
             radial-gradient(
               circle at top left,
-              rgba(99, 0, 130, 0.08),
+              rgba(
+                99,
+                0,
+                130,
+                0.08
+              ),
               transparent 42%
             ),
             var(--panel);
+
           padding: 22px;
           min-width: 0;
         }
@@ -982,12 +1308,23 @@ export default function HomePage() {
 
         .live-pill {
           flex-shrink: 0;
+
           display: flex;
           align-items: center;
           gap: 6px;
-          border: 1px solid rgba(0, 216, 102, 0.4);
+
+          border: 1px solid
+            rgba(
+              0,
+              216,
+              102,
+              0.4
+            );
+
           border-radius: 20px;
+
           padding: 5px 10px;
+
           color: var(--green);
           font-size: 9px;
           font-weight: 800;
@@ -995,6 +1332,7 @@ export default function HomePage() {
 
         .question {
           margin-top: 15px;
+
           color: var(--text);
           font-size: 14px;
           line-height: 1.5;
@@ -1003,7 +1341,12 @@ export default function HomePage() {
 
         .options {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns:
+            repeat(
+              2,
+              minmax(0, 1fr)
+            );
+
           gap: 10px;
           margin-top: 18px;
         }
@@ -1011,16 +1354,32 @@ export default function HomePage() {
         .option {
           border-radius: 11px;
           padding: 15px;
-          border: 1px solid var(--border);
-          background: var(--panel-2);
+
+          border: 1px solid
+            var(--border);
+
+          background:
+            var(--panel-2);
         }
 
         .option.yes {
-          border-color: rgba(0, 216, 102, 0.25);
+          border-color:
+            rgba(
+              0,
+              216,
+              102,
+              0.25
+            );
         }
 
         .option.no {
-          border-color: rgba(255, 64, 81, 0.3);
+          border-color:
+            rgba(
+              255,
+              64,
+              81,
+              0.3
+            );
         }
 
         .option-head {
@@ -1052,6 +1411,7 @@ export default function HomePage() {
         .bar {
           height: 6px;
           margin-top: 14px;
+
           border-radius: 10px;
           background: #252732;
           overflow: hidden;
@@ -1127,7 +1487,10 @@ export default function HomePage() {
 
         .ending-box {
           margin-top: 14px;
-          border: 1px solid var(--border);
+
+          border: 1px solid
+            var(--border);
+
           border-radius: 11px;
           padding: 16px;
         }
@@ -1147,9 +1510,17 @@ export default function HomePage() {
 
         .market-meta {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          border: 1px solid var(--border);
+          grid-template-columns:
+            repeat(
+              3,
+              minmax(0, 1fr)
+            );
+
+          border: 1px solid
+            var(--border);
+
           border-radius: 11px;
+
           margin-top: 14px;
           overflow: hidden;
         }
@@ -1157,7 +1528,8 @@ export default function HomePage() {
         .meta-item {
           padding: 13px 8px;
           text-align: center;
-          border-right: 1px solid var(--border);
+          border-right: 1px solid
+            var(--border);
         }
 
         .meta-item:last-child {
@@ -1180,12 +1552,19 @@ export default function HomePage() {
         .search {
           width: 100%;
           height: 48px;
-          border: 1px solid var(--border);
+
+          border: 1px solid
+            var(--border);
+
           border-radius: 13px;
+
           background: var(--input);
           color: var(--text);
+
           padding: 0 17px;
+
           outline: none;
+
           margin-bottom: 18px;
         }
 
@@ -1194,8 +1573,17 @@ export default function HomePage() {
         }
 
         .search:focus {
-          border-color: var(--purple);
-          box-shadow: 0 0 0 3px rgba(155, 25, 245, 0.08);
+          border-color:
+            var(--purple);
+
+          box-shadow:
+            0 0 0 3px
+            rgba(
+              155,
+              25,
+              245,
+              0.08
+            );
         }
 
         .history-list {
@@ -1205,15 +1593,29 @@ export default function HomePage() {
         }
 
         .history-card {
-          border: 1px solid rgba(94, 12, 110, 0.8);
+          border: 1px solid
+            rgba(
+              94,
+              12,
+              110,
+              0.8
+            );
+
           border-radius: 14px;
+
           background:
             radial-gradient(
               circle at top left,
-              rgba(111, 0, 150, 0.07),
+              rgba(
+                111,
+                0,
+                150,
+                0.07
+              ),
               transparent 40%
             ),
             var(--panel);
+
           padding: 21px;
         }
 
@@ -1242,36 +1644,69 @@ export default function HomePage() {
           margin-top: 8px;
           color: var(--muted-2);
           font-size: 9px;
-          word-break: break-all;
         }
 
         .result-pill {
           flex-shrink: 0;
-          border: 1px solid rgba(255, 64, 81, 0.5);
+          border: 1px solid
+            rgba(
+              255,
+              64,
+              81,
+              0.5
+            );
+
           color: var(--red);
+
           border-radius: 20px;
+
           padding: 8px 16px;
+
           font-size: 9px;
           font-weight: 800;
         }
 
         .history-info-grid {
           display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
+
+          grid-template-columns:
+            repeat(
+              5,
+              minmax(0, 1fr)
+            );
+
           gap: 10px;
+
           margin-top: 20px;
         }
 
         .info-box {
           min-height: 57px;
-          border: 1px solid var(--border);
+
+          border: 1px solid
+            var(--border);
+
           border-radius: 10px;
+
           padding: 11px;
         }
 
         .info-box.highlight {
-          border-color: rgba(155, 25, 245, 0.6);
-          background: rgba(100, 0, 150, 0.04);
+          border-color:
+            rgba(
+              155,
+              25,
+              245,
+              0.6
+            );
+
+          background:
+            rgba(
+              100,
+              0,
+              150,
+              0.04
+            );
         }
 
         .info-label {
@@ -1281,7 +1716,8 @@ export default function HomePage() {
           text-transform: uppercase;
         }
 
-        .info-box.highlight .info-label {
+        .info-box.highlight
+          .info-label {
           color: var(--purple);
         }
 
@@ -1290,7 +1726,6 @@ export default function HomePage() {
           color: var(--text);
           font-size: 10px;
           font-weight: 600;
-          overflow-wrap: anywhere;
         }
 
         .info-value.payout {
@@ -1300,13 +1735,20 @@ export default function HomePage() {
 
         .pool-grid {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns:
+            repeat(
+              2,
+              minmax(0, 1fr)
+            );
+
           gap: 10px;
           margin-top: 10px;
         }
 
         .pool-box {
-          border: 1px solid var(--border);
+          border: 1px solid
+            var(--border);
+
           border-radius: 10px;
           padding: 12px;
         }
@@ -1317,7 +1759,13 @@ export default function HomePage() {
 
         .history-bottom {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+
+          grid-template-columns:
+            1fr
+            1fr
+            1fr
+            1fr;
+
           gap: 10px;
           margin-top: 10px;
         }
@@ -1326,13 +1774,20 @@ export default function HomePage() {
         .empty-card,
         .error-card {
           min-height: 140px;
-          border: 1px solid var(--border);
+
+          border: 1px solid
+            var(--border);
+
           border-radius: 14px;
+
           background: var(--panel);
+
           display: flex;
           align-items: center;
           justify-content: center;
+
           gap: 12px;
+
           color: var(--muted);
           font-size: 12px;
         }
@@ -1344,32 +1799,54 @@ export default function HomePage() {
         .spinner {
           width: 22px;
           height: 22px;
+
           border-radius: 50%;
-          border: 2px solid var(--border);
-          border-top-color: var(--purple);
-          animation: crsh-spin 700ms linear infinite;
+
+          border: 2px solid
+            var(--border);
+
+          border-top-color:
+            var(--purple);
+
+          animation:
+            crsh-spin
+            700ms
+            linear
+            infinite;
         }
 
         @keyframes crsh-spin {
           to {
-            transform: rotate(360deg);
+            transform:
+              rotate(360deg);
           }
         }
 
         footer {
           margin-top: 52px;
           padding-top: 25px;
-          border-top: 1px solid var(--border);
+
+          border-top: 1px solid
+            var(--border);
+
           display: flex;
           justify-content: space-between;
+
           color: var(--muted-2);
+
           font-size: 8px;
           letter-spacing: 1.5px;
         }
 
-        @media (max-width: 800px) {
+        @media (
+          max-width: 800px
+        ) {
           .crsh-shell {
-            width: min(100% - 22px, 1076px);
+            width: min(
+              100% - 22px,
+              1076px
+            );
+
             padding-top: 28px;
           }
 
@@ -1391,7 +1868,11 @@ export default function HomePage() {
           }
 
           .history-info-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns:
+              repeat(
+                2,
+                minmax(0, 1fr)
+              );
           }
 
           .pool-grid {
@@ -1399,11 +1880,17 @@ export default function HomePage() {
           }
 
           .history-bottom {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns:
+              repeat(
+                2,
+                minmax(0, 1fr)
+              );
           }
         }
 
-        @media (max-width: 520px) {
+        @media (
+          max-width: 520px
+        ) {
           .brand {
             font-size: 18px;
           }
@@ -1438,50 +1925,81 @@ export default function HomePage() {
             grid-template-columns: 1fr;
           }
         }
+
       `}</style>
     </main>
   );
 }
 
-function LiveMarketCard({ stream }: { stream: LiveStream }) {
-  const market = stream.market;
+function LiveMarketCard({
+  stream,
+}: {
+  stream: LiveStream;
+}) {
+  const market =
+    stream.market;
 
   if (!market) {
     return null;
   }
 
-  const yes = getLivePool(stream, 0);
-  const no = getLivePool(stream, 1);
+  const yes =
+    getLivePool(
+      stream,
+      0
+    );
 
-  const percentages = calculateLivePercentage(yes, no);
-  const ending = isResolved(market.status);
+  const no =
+    getLivePool(
+      stream,
+      1
+    );
 
-  const streamUrl = getStreamUrl(stream);
+  const percentages =
+    calculateLivePercentage(
+      yes,
+      no
+    );
+
+  const status =
+    normalizeStatus(
+      market.status
+    );
+
+  const ending =
+    status === "resolved" ||
+    status === "cancelled" ||
+    status === "canceled";
 
   return (
     <article className="market-card">
+
       <div className="market-top">
+
         <div className="game-label">
-          {stream.title ?? "Market"}
+          {stream.title ??
+            "Market"}
         </div>
 
         <div className="live-pill">
           <span className="green-dot" />
           LIVE
         </div>
+
       </div>
 
       <div className="question">
-        {market.title ?? "Untitled market"}
+        {market.title ??
+          "Untitled market"}
       </div>
 
-      {streamUrl && (
+      {getStreamUrl(stream) && (
         <div className="market-links">
           <a
             className="market-link live-link"
-            href={streamUrl}
+            href={getStreamUrl(stream) ?? "#"}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noreferrer"
           >
             WATCH STREAM ↗
           </a>
@@ -1489,12 +2007,19 @@ function LiveMarketCard({ stream }: { stream: LiveStream }) {
       )}
 
       <div className="options">
+
         <div className="option yes">
+
           <div className="option-head">
-            <span className="option-label">YES</span>
+            <span className="option-label">
+              YES
+            </span>
 
             <span className="percentage">
-              {percentages.yes.toFixed(1)}%
+              {percentages.yes.toFixed(
+                1
+              )}
+              %
             </span>
           </div>
 
@@ -1508,16 +2033,26 @@ function LiveMarketCard({ stream }: { stream: LiveStream }) {
           </div>
 
           <div className="pool-label">
-            Pool {formatUsd(yes)}
+            Pool{" "}
+            {formatUsd(
+              yes
+            )}
           </div>
+
         </div>
 
         <div className="option no">
+
           <div className="option-head">
-            <span className="option-label">NO</span>
+            <span className="option-label">
+              NO
+            </span>
 
             <span className="percentage">
-              {percentages.no.toFixed(1)}%
+              {percentages.no.toFixed(
+                1
+              )}
+              %
             </span>
           </div>
 
@@ -1531,68 +2066,106 @@ function LiveMarketCard({ stream }: { stream: LiveStream }) {
           </div>
 
           <div className="pool-label">
-            Pool {formatUsd(no)}
+            Pool{" "}
+            {formatUsd(
+              no
+            )}
           </div>
+
         </div>
+
       </div>
 
       <div className="ending-box">
-        <div className="ending-title">MARKET STATUS</div>
+        <div className="ending-title">
+          MARKET ENDS IN
+        </div>
 
         <div className="ending-value">
-          {ending ? "ENDED" : "LIVE"}
+          {ending
+            ? "ENDING"
+            : "LIVE"}
         </div>
 
         <div className="bar">
           <div
             className="bar-fill"
             style={{
-              width: ending ? "0%" : "100%",
-              background: "var(--red)",
+              width:
+                ending
+                  ? "0%"
+                  : "100%",
+              background:
+                "var(--red)",
             }}
           />
         </div>
       </div>
 
       <div className="market-meta">
+
         <div className="meta-item">
-          <div className="meta-label">MARKET</div>
+          <div className="meta-label">
+            MARKET
+          </div>
 
           <div className="meta-value">
-            #{market.marketId ?? "—"}
+            #
+            {market.marketId ??
+              "—"}
           </div>
         </div>
 
         <div className="meta-item">
-          <div className="meta-label">VIEWERS</div>
+          <div className="meta-label">
+            VIEWERS
+          </div>
 
           <div className="meta-value">
-            {Number(stream.viewerCount ?? 0).toLocaleString()}
+            {Number(
+              stream.viewerCount ??
+                0
+            ).toLocaleString()}
           </div>
         </div>
 
         <div className="meta-item">
-          <div className="meta-label">TRADES</div>
+          <div className="meta-label">
+            TRADES
+          </div>
 
           <div className="meta-value">
-            {Number(market.totalTrades ?? 0).toLocaleString()}
+            {Number(
+              market.totalTrades ??
+                0
+            ).toLocaleString()}
           </div>
         </div>
+
       </div>
+
     </article>
   );
 }
 
-function HistoryCard({ market }: { market: Market }) {
-  const expected = market.expected_winnings;
-  const winner = getWinnerLabel(market.winning_option_id);
+function HistoryCard({
+  market,
+}: {
+  market: Market;
+}) {
+  const expected =
+    market.expected_winnings;
 
-  const proofUrl = getResolutionProofUrl(market);
-  const streamUrl = getStreamUrl(market);
+  const winner =
+    getWinnerLabel(
+      market.winning_option_id
+    );
 
   return (
     <article className="history-card">
+
       <div className="history-top">
+
         <div>
           <div className="history-game">
             {market.stream_title ??
@@ -1601,32 +2174,43 @@ function HistoryCard({ market }: { market: Market }) {
           </div>
 
           <div className="history-title">
-            {market.title ?? "Untitled market"}
+            {market.title ??
+              "Untitled market"}
           </div>
 
           <div className="market-id">
-            MARKET #{market.market_id}
+            MARKET #
+            {market.market_id}
           </div>
 
-          {(proofUrl || streamUrl) && (
+          {(getResolutionProofUrl(market) ||
+            getStreamUrl(market)) && (
             <div className="market-links">
-              {proofUrl && (
+              {getResolutionProofUrl(market) && (
                 <a
                   className="market-link proof-link"
-                  href={proofUrl}
+                  href={
+                    getResolutionProofUrl(market) ??
+                    "#"
+                  }
                   target="_blank"
-                  rel="noopener noreferrer"
+                  rel="noreferrer"
                 >
                   VIEW RESOLUTION PROOF ↗
                 </a>
               )}
 
-              {streamUrl && streamUrl !== proofUrl && (
+              {getStreamUrl(market) &&
+                getStreamUrl(market) !==
+                  getResolutionProofUrl(market) && (
                 <a
                   className="market-link"
-                  href={streamUrl}
+                  href={
+                    getStreamUrl(market) ??
+                    "#"
+                  }
                   target="_blank"
-                  rel="noopener noreferrer"
+                  rel="noreferrer"
                 >
                   VIEW STREAM ↗
                 </a>
@@ -1635,28 +2219,35 @@ function HistoryCard({ market }: { market: Market }) {
           )}
         </div>
 
-        <div className="result-pill">{winner}</div>
+        <div className="result-pill">
+          {winner}
+        </div>
+
       </div>
 
       <div className="history-info-grid">
+
         <InfoBox
           label="OPENED"
           value={formatDate(
-            market.opened_at ?? market.first_seen_at
+            market.opened_at ??
+              market.first_seen_at
           )}
         />
 
         <InfoBox
           label="CLOSED"
           value={formatDate(
-            market.closed_at ?? market.resolved_at
+            market.closed_at ??
+              market.resolved_at
           )}
         />
 
         <InfoBox
           label="RECORDED"
           value={formatDate(
-            market.recorded_at ?? market.resolved_at
+            market.recorded_at ??
+              market.resolved_at
           )}
         />
 
@@ -1672,58 +2263,88 @@ function HistoryCard({ market }: { market: Market }) {
         <InfoBox
           label="EXPECTED WINNINGS"
           value={
-            expected !== null && expected !== undefined
-              ? formatUsd(expected)
+            expected !== null &&
+            expected !== undefined
+              ? formatUsd(
+                  expected
+                )
               : "Unavailable"
           }
           highlight
           payout
         />
+
       </div>
 
       <div className="pool-grid">
+
         <div className="pool-box">
-          <div className="info-label">YES POOL</div>
+          <div className="info-label">
+            YES POOL
+          </div>
 
           <div className="info-value">
-            {formatUsd(getPool(market, 0))}
+            {formatUsd(
+              getPool(
+                market,
+                0
+              )
+            )}
           </div>
         </div>
 
         <div className="pool-box">
-          <div className="info-label">NO POOL</div>
+          <div className="info-label">
+            NO POOL
+          </div>
 
           <div className="info-value">
-            {formatUsd(getPool(market, 1))}
+            {formatUsd(
+              getPool(
+                market,
+                1
+              )
+            )}
           </div>
         </div>
+
       </div>
 
       <div className="history-bottom">
+
         <InfoBox
           label="TRADES"
           value={Number(
-            market.total_trades ?? 0
+            market.total_trades ??
+              0
           ).toLocaleString()}
         />
 
         <InfoBox
           label="VIEWERS"
           value={Number(
-            market.viewer_count ?? 0
+            market.viewer_count ??
+              0
           ).toLocaleString()}
         />
 
         <InfoBox
           label="RESOLVED"
-          value={formatDate(market.resolved_at)}
+          value={formatDate(
+            market.resolved_at
+          )}
         />
 
         <InfoBox
           label="STATUS"
-          value={market.status ?? "unknown"}
+          value={
+            market.status ??
+            "unknown"
+          }
         />
+
       </div>
+
     </article>
   );
 }
@@ -1740,10 +2361,24 @@ function InfoBox({
   payout?: boolean;
 }) {
   return (
-    <div className={highlight ? "info-box highlight" : "info-box"}>
-      <div className="info-label">{label}</div>
+    <div
+      className={
+        highlight
+          ? "info-box highlight"
+          : "info-box"
+      }
+    >
+      <div className="info-label">
+        {label}
+      </div>
 
-      <div className={payout ? "info-value payout" : "info-value"}>
+      <div
+        className={
+          payout
+            ? "info-value payout"
+            : "info-value"
+        }
+      >
         {value}
       </div>
     </div>
