@@ -2534,135 +2534,144 @@ async function saveMarket(
 
     DO UPDATE SET
 
-      title =
+  title =
+    COALESCE(
+      EXCLUDED.title,
+      markets.title
+    ),
+
+  /*
+   * IMPORTANT:
+   * Once a market becomes resolved/cancelled,
+   * NEVER allow a later Convex snapshot to
+   * downgrade it back to active/open/unknown.
+   */
+  status =
+    CASE
+      WHEN LOWER(
         COALESCE(
-          EXCLUDED.title,
-          markets.title
-        ),
+          markets.status,
+          ''
+        )
+      ) IN (
+        'resolved',
+        'cancelled',
+        'canceled'
+      )
+      THEN markets.status
 
-      /*
-       * Once a market is resolved, never let a later
-       * incomplete/active snapshot turn it back into a live row.
-       */
-      status =
-        CASE
-          WHEN LOWER(
-            COALESCE(
-              markets.status,
-              ''
-            )
-          ) IN (
-            'resolved',
-            'cancelled',
-            'canceled',
-            'settled',
-            'complete',
-            'completed',
-            'finalized'
-          )
-          THEN markets.status
-          ELSE EXCLUDED.status
-        END,
+      ELSE EXCLUDED.status
+    END,
 
-      winning_option_id =
+  winning_option_id =
+    COALESCE(
+      EXCLUDED.winning_option_id,
+      markets.winning_option_id
+    ),
+
+  current_pools_usdc =
+    COALESCE(
+      EXCLUDED.current_pools_usdc,
+      markets.current_pools_usdc
+    ),
+
+  /*
+   * NEVER decrease trade count.
+   */
+  total_trades =
+    GREATEST(
+      COALESCE(
+        markets.total_trades,
+        0
+      ),
+      COALESCE(
+        EXCLUDED.total_trades,
+        0
+      )
+    ),
+
+  stream_id =
+    COALESCE(
+      EXCLUDED.stream_id,
+      markets.stream_id
+    ),
+
+  stream_title =
+    COALESCE(
+      EXCLUDED.stream_title,
+      markets.stream_title
+    ),
+
+  host_name =
+    COALESCE(
+      EXCLUDED.host_name,
+      markets.host_name
+    ),
+
+  viewer_count =
+    COALESCE(
+      EXCLUDED.viewer_count,
+      markets.viewer_count
+    ),
+
+  /*
+   * Keep original opening timestamp.
+   */
+  first_seen_at =
+    COALESCE(
+      markets.first_seen_at,
+      EXCLUDED.first_seen_at
+    ),
+
+  /*
+   * Always move last_seen forward.
+   */
+  last_seen_at =
+    EXCLUDED.last_seen_at,
+
+  /*
+   * Once resolved, NEVER erase resolved_at.
+   */
+  resolved_at =
+    CASE
+      WHEN LOWER(
         COALESCE(
-          EXCLUDED.winning_option_id,
-          markets.winning_option_id
-        ),
+          markets.status,
+          ''
+        )
+      ) IN (
+        'resolved',
+        'cancelled',
+        'canceled'
+      )
+      THEN COALESCE(
+        markets.resolved_at,
+        EXCLUDED.resolved_at
+      )
 
-      current_pools_usdc =
+      WHEN LOWER(
         COALESCE(
-          EXCLUDED.current_pools_usdc,
-          markets.current_pools_usdc
-        ),
+          EXCLUDED.status,
+          ''
+        )
+      ) IN (
+        'resolved',
+        'cancelled',
+        'canceled'
+      )
+      THEN COALESCE(
+        markets.resolved_at,
+        EXCLUDED.resolved_at
+      )
 
-      /*
-       * NEVER allow a later incomplete snapshot
-       * to reduce the stored trade count.
-       */
-      total_trades =
-        GREATEST(
-          COALESCE(
-            markets.total_trades,
-            0
-          ),
-          COALESCE(
-            EXCLUDED.total_trades,
-            0
-          )
-        ),
+      ELSE markets.resolved_at
+    END,
 
-      stream_id =
-        COALESCE(
-          EXCLUDED.stream_id,
-          markets.stream_id
-        ),
-
-      stream_title =
-        COALESCE(
-          EXCLUDED.stream_title,
-          markets.stream_title
-        ),
-
-      host_name =
-        COALESCE(
-          EXCLUDED.host_name,
-          markets.host_name
-        ),
-
-      viewer_count =
-        COALESCE(
-          EXCLUDED.viewer_count,
-          markets.viewer_count
-        ),
-
-      /*
-       * Keep original opening timestamp.
-       */
-      first_seen_at =
-        COALESCE(
-          markets.first_seen_at,
-          EXCLUDED.first_seen_at
-        ),
-
-      /*
-       * Always move last_seen forward.
-       */
-      last_seen_at =
-        EXCLUDED.last_seen_at,
-
-      /*
-       * Once resolved, NEVER erase resolved_at.
-       */
-      resolved_at =
-        CASE
-          WHEN LOWER(
-            COALESCE(
-              EXCLUDED.status,
-              ''
-            )
-          ) IN (
-            'resolved',
-            'cancelled',
-            'canceled',
-            'settled',
-            'complete',
-            'completed',
-            'finalized'
-          )
-          THEN COALESCE(
-            markets.resolved_at,
-            EXCLUDED.resolved_at
-          )
-
-          ELSE markets.resolved_at
-        END,
-
-      /*
-       * Keep latest raw snapshot.
-       */
-      raw_data =
-        EXCLUDED.raw_data
+  /*
+   * Keep latest raw snapshot.
+   */
+  raw_data =
+    EXCLUDED.raw_data
   `;
 
   /*
@@ -3225,45 +3234,86 @@ async function archiveResolvedMarket(market: any) {
    LOAD RESOLVED MARKETS
 ========================================================= */
 
+/* =========================================================
+   LOAD RESOLVED MARKETS
+========================================================= */
+
 async function getResolvedMarkets() {
   if (!sql) {
-    throw new Error(
-      "DATABASE_URL / POSTGRES_URL is missing. Market history cannot be loaded."
+    console.error(
+      "CRSHMARKET HISTORY: Database connection missing."
     );
+
+    return [];
   }
 
-  await ensureResolvedHistoryArchive();
+  try {
+    const rows =
+      await sql`
+        SELECT
+          market_id,
+          title,
+          status,
+          winning_option_id,
+          current_pools_usdc,
+          total_trades,
+          stream_id,
+          stream_title,
+          host_name,
+          viewer_count,
+          first_seen_at,
+          last_seen_at,
+          resolved_at,
+          raw_data
+        FROM markets
 
-  const rows = await sql`
-    SELECT
-      market_id,
-      title,
-      status,
-      winning_option_id,
-      current_pools_usdc,
-      total_trades,
-      stream_id,
-      stream_title,
-      host_name,
-      viewer_count,
-      first_seen_at,
-      last_seen_at,
-      resolved_at,
-      raw_data
-    FROM crsh_resolved_markets
-    ORDER BY
-      COALESCE(
-        resolved_at,
-        last_seen_at,
-        first_seen_at
-      ) DESC
-  `;
+        /*
+         * A market is considered permanent history
+         * once either:
+         *
+         * 1. its status is resolved/cancelled
+         * 2. resolved_at exists
+         *
+         * This prevents a resolved market from disappearing
+         * if a later Convex snapshot temporarily reports
+         * another status.
+         */
+        WHERE
+          LOWER(
+            COALESCE(
+              status,
+              ''
+            )
+          ) IN (
+            'resolved',
+            'cancelled',
+            'canceled'
+          )
 
-  return rows.map(
-    normalizeDbMarket
-  );
+          OR resolved_at IS NOT NULL
+
+        ORDER BY
+          COALESCE(
+            resolved_at,
+            last_seen_at,
+            first_seen_at
+          ) DESC
+
+        LIMIT 500
+      `;
+
+    return rows.map(
+      normalizeDbMarket
+    );
+  } catch (error) {
+    console.error(
+      "CRSHMARKET HISTORY DB LOAD FAILED:",
+      error
+    );
+
+    throw error;
+  }
 }
-
 /* =========================================================
    OPTIONAL CONVEX RESOLVED HISTORY
 
@@ -3954,13 +4004,20 @@ export async function GET() {
       );
 
     /* -----------------------------------------
-       KICK VOD RESOLUTION
-    ----------------------------------------- */
+   KICK VOD RESOLUTION
+-----------------------------------------
 
-    await resolveKickProofs(
-      resolvedMarkets
-    );
-
+// IMPORTANT:
+// Do NOT resolve Kick VODs during every
+// /api/markets refresh.
+//
+// The frontend refreshes market data every
+// 2 seconds, so doing VOD lookups here
+// creates unnecessary external requests,
+// delays and API 500 errors.
+//
+// Kick proof resolution should be handled
+// separately from the market refresh path.
     /* -----------------------------------------
        Persist any proof updates
        

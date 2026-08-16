@@ -1,12 +1,11 @@
 
 
 
-"use client";
-
 import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -99,6 +98,9 @@ const usdFormatter = new Intl.NumberFormat(
     maximumFractionDigits: 2,
   }
 );
+
+const refreshRequestRef =
+  useRef(0);
 
 function formatUsd(
   value: any
@@ -419,71 +421,130 @@ export default function HomePage() {
         : "light"
     );
   }, [darkMode]);
-
+const requestId =
+  ++refreshRequestRef.current;
   const fetchMarkets =
-    useCallback(
-      async (
-        initial = false
-      ) => {
-        try {
-          if (initial) {
-            setLoading(true);
-          }
-
-          const response =
-            await fetch(
-              "/api/markets",
-              {
-                method: "GET",
-                cache: "no-store",
-                headers: {
-                  "Cache-Control":
-                    "no-cache",
-                },
-              }
-            );
-
-          if (
-            !response.ok
-          ) {
-            throw new Error(
-              `API error ${response.status}`
-            );
-          }
-
-          const json =
-            (await response.json()) as ApiResponse;
-
-          if (
-            json.status !==
-            "success"
-          ) {
-            throw new Error(
-              "Market API failed"
-            );
-          }
-
-          setData(json);
-          setError(null);
-          setLastUpdated(
-            new Date()
-          );
-        } catch (
-          err
-        ) {
-          console.error(err);
-
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load markets"
-          );
-        } finally {
-          setLoading(false);
+  useCallback(
+    async (
+      initial = false
+    ) => {
+      try {
+        if (initial) {
+          setLoading(true);
         }
-      },
-      []
-    );
+
+        const response =
+          await fetch(
+            "/api/markets",
+            {
+              method: "GET",
+
+              /*
+               * Never use browser cache for
+               * market refreshes.
+               */
+              cache: "no-store",
+
+              headers: {
+                "Cache-Control":
+                  "no-cache, no-store, must-revalidate",
+                Pragma: "no-cache",
+                Expires: "0",
+              },
+            }
+          );
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            `API error ${response.status}`
+          );
+        }
+
+        const json =
+          (await response.json()) as ApiResponse;
+
+        if (
+          json.status !==
+          "success"
+        ) {
+          throw new Error(
+            "Market API failed"
+          );
+        }
+
+        /*
+         * IMPORTANT:
+         *
+         * Only replace the existing data after
+         * receiving a valid successful response.
+         *
+         * A temporary API failure must NEVER
+         * replace existing markets with [].
+         */
+
+        if (
+  requestId !==
+  refreshRequestRef.current
+) {
+  return;
+}
+        if (
+          !json.value ||
+          !Array.isArray(
+            json.value.activeStreams
+          ) ||
+          !Array.isArray(
+            json.value.resolvedMarkets
+          )
+        ) {
+          throw new Error(
+            "Invalid market API response"
+          );
+        }
+
+        setData(
+          json
+        );
+
+        setError(
+          null
+        );
+
+        setLastUpdated(
+          new Date()
+        );
+      } catch (
+        err
+      ) {
+        console.error(
+          "Market refresh failed:",
+          err
+        );
+
+        /*
+         * IMPORTANT:
+         *
+         * DO NOT call setData(null).
+         * DO NOT clear the current markets.
+         *
+         * Keep the last successful snapshot
+         * visible while the next refresh retries.
+         */
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to refresh markets"
+        );
+      } finally {
+        setLoading(
+          false
+        );
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     fetchMarkets(true);
@@ -685,45 +746,40 @@ export default function HomePage() {
             </div>
 
             {loading &&
-            !data ? (
-              <div className="loading-card">
-                <div className="spinner" />
-                <span>
-                  Loading live markets...
-                </span>
-              </div>
-            ) : error ? (
-              <div className="error-card">
-                {error}
-              </div>
-            ) : activeStreams.length ===
-              0 ? (
-              <div className="empty-card">
-                No active markets.
-              </div>
-            ) : (
-              <div className="market-grid">
-                {activeStreams.map(
-                  (
-                    stream,
-                    index
-                  ) => (
-                    <LiveMarketCard
-                      key={
-                        stream.market
-                          ?.marketId ??
-                        stream.id ??
-                        index
-                      }
-                      stream={
-                        stream
-                      }
-                    />
-                  )
-                )}
-              </div>
-            )}
-
+!data ? (
+  <div className="loading-card">
+    <div className="spinner" />
+    <span>
+      Loading live markets...
+    </span>
+  </div>
+) : activeStreams.length ===
+  0 ? (
+  <div className="empty-card">
+    No active markets.
+  </div>
+) : (
+  <div className="market-grid">
+    {activeStreams.map(
+      (
+        stream,
+        index
+      ) => (
+        <LiveMarketCard
+          key={
+            stream.market
+              ?.marketId ??
+            stream.id ??
+            index
+          }
+          stream={
+            stream
+          }
+        />
+      )
+    )}
+  </div>
+)}
           </section>
         ) : (
           <section>
@@ -751,40 +807,36 @@ export default function HomePage() {
             />
 
             {loading &&
-            !data ? (
-              <div className="loading-card">
-                <div className="spinner" />
-                <span>
-                  Loading market history...
-                </span>
-              </div>
-            ) : error ? (
-              <div className="error-card">
-                {error}
-              </div>
-            ) : filteredHistory.length ===
-              0 ? (
-              <div className="empty-card">
-                No matching markets.
-              </div>
-            ) : (
-              <div className="history-list">
-                {filteredHistory.map(
-                  (
-                    market
-                  ) => (
-                    <HistoryCard
-                      key={
-                        market.market_id
-                      }
-                      market={
-                        market
-                      }
-                    />
-                  )
-                )}
-              </div>
-            )}
+!data ? (
+  <div className="loading-card">
+    <div className="spinner" />
+    <span>
+      Loading market history...
+    </span>
+  </div>
+) : filteredHistory.length ===
+  0 ? (
+  <div className="empty-card">
+    No matching markets.
+  </div>
+) : (
+  <div className="history-list">
+    {filteredHistory.map(
+      (
+        market
+      ) => (
+        <HistoryCard
+          key={
+            market.market_id
+          }
+          market={
+            market
+          }
+        />
+      )
+    )}
+  </div>
+)}
 
           </section>
         )}
