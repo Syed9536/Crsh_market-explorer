@@ -8,6 +8,12 @@ const CONVEX_URL =
   process.env.CONVEX_URL ??
   "https://impartial-newt-333.convex.cloud/api/query";
 
+/*
+ * Production-safe database configuration.
+ *
+ * Vercel/Neon setups can expose different postgres
+ * environment variable names, so support all common ones.
+ */
 const DATABASE_URL =
   process.env.DATABASE_URL ??
   process.env.POSTGRES_URL ??
@@ -15,7 +21,9 @@ const DATABASE_URL =
   process.env.POSTGRES_URL_NON_POOLING ??
   null;
 
-const sql = DATABASE_URL ? neon(DATABASE_URL) : null;
+const sql = DATABASE_URL
+  ? neon(DATABASE_URL)
+  : null;
 
 const USDC_BASE = 1_000_000;
 const HYPOTHETICAL_BET = 10;
@@ -94,24 +102,61 @@ type ConvexStream = {
   [key: string]: any;
 };
 
+type DatabaseMarket = {
+  market_id: string;
+
+  title?: string | null;
+  status?: string | null;
+
+  winning_option_id?: number | null;
+
+  current_pools_usdc?: any;
+
+  total_trades?: number | null;
+
+  stream_id?: string | null;
+  stream_title?: string | null;
+  host_name?: string | null;
+  viewer_count?: number | null;
+
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  resolved_at?: string | null;
+
+  raw_data?: any;
+
+  stream_url?: string | null;
+  stream_embed_url?: string | null;
+  resolution_proof_url?: string | null;
+};
+
 /* =========================================================
    GENERIC HELPERS
 ========================================================= */
 
 function asNumber(value: any): number | null {
-  if (value === null || value === undefined || value === "") {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return null;
   }
 
   const n = Number(value);
 
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n)
+    ? n
+    : null;
 }
 
 function asTradeCount(value: any): number {
   const n = asNumber(value);
 
-  if (n === null || n < 0) {
+  if (
+    n === null ||
+    n < 0
+  ) {
     return 0;
   }
 
@@ -119,7 +164,9 @@ function asTradeCount(value: any): number {
 }
 
 function parseJson(value: any): any {
-  if (typeof value !== "string") {
+  if (
+    typeof value !== "string"
+  ) {
     return value;
   }
 
@@ -130,58 +177,94 @@ function parseJson(value: any): any {
   }
 }
 
-function isResolvedStatus(status: any): boolean {
-  const value = String(status ?? "")
-    .trim()
-    .toLowerCase();
+function isResolvedStatus(
+  status: any
+): boolean {
+  const value =
+    String(status ?? "")
+      .trim()
+      .toLowerCase();
 
   return (
     value === "resolved" ||
     value === "cancelled" ||
-    value === "canceled"
+    value === "canceled" ||
+    value === "settled" ||
+    value === "complete" ||
+    value === "completed" ||
+    value === "finalized"
   );
 }
 
-function toIso(value: any): string | null {
-  if (value === null || value === undefined || value === "") {
+function toIso(
+  value: any
+): string | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return null;
   }
 
   const n = Number(value);
 
   if (Number.isFinite(n)) {
-    const ms = n < 10_000_000_000 ? n * 1000 : n;
+    const ms =
+      n < 10_000_000_000
+        ? n * 1000
+        : n;
 
     const date = new Date(ms);
 
-    if (!Number.isNaN(date.getTime())) {
+    if (
+      !Number.isNaN(
+        date.getTime()
+      )
+    ) {
       return date.toISOString();
     }
   }
 
-  const date = new Date(String(value));
+  const date =
+    new Date(
+      String(value)
+    );
 
-  if (!Number.isNaN(date.getTime())) {
+  if (
+    !Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return date.toISOString();
   }
 
   return null;
 }
 
-function baseUnitsToUsd(value: any): number {
-  const n = asNumber(value) ?? 0;
+function baseUnitsToUsd(
+  value: any
+): number {
+  const n =
+    asNumber(value) ?? 0;
 
   return n / USDC_BASE;
 }
 
-function normalizePoolRaw(value: any): number {
-  const n = asNumber(value) ?? 0;
+function normalizePoolRaw(
+  value: any
+): number {
+  const n =
+    asNumber(value) ?? 0;
 
   if (n === 0) {
     return 0;
   }
 
-  if (Number.isInteger(n) && Math.abs(n) >= USDC_BASE) {
+  if (
+    Number.isInteger(n) &&
+    Math.abs(n) >= USDC_BASE
+  ) {
     return n;
   }
 
@@ -199,31 +282,54 @@ function getPools(
     return null;
   }
 
-  const resolved = isResolvedStatus(market.status);
+  const resolved =
+    isResolvedStatus(
+      market.status
+    );
 
-  const candidates = resolved
-    ? [
-        market.finalPoolsUsdc,
-        market.finalPools,
-        market.currentPoolsUsdc,
-        market.currentPools,
-      ]
-    : [
-        market.currentPoolsUsdc,
-        market.currentPools,
-        market.finalPoolsUsdc,
-        market.finalPools,
-      ];
+  const candidates =
+    resolved
+      ? [
+          market.finalPoolsUsdc,
+          market.finalPools,
+          market.currentPoolsUsdc,
+          market.currentPools,
+        ]
+      : [
+          market.currentPoolsUsdc,
+          market.currentPools,
+          market.finalPoolsUsdc,
+          market.finalPools,
+        ];
 
-  for (const candidateRaw of candidates) {
-    const candidate = parseJson(candidateRaw);
+  for (
+    const candidateRaw of candidates
+  ) {
+    const candidate =
+      parseJson(candidateRaw);
 
-    if (Array.isArray(candidate) && candidate.length >= 2) {
-      const yes = normalizePoolRaw(candidate[0]);
-      const no = normalizePoolRaw(candidate[1]);
+    if (
+      Array.isArray(candidate) &&
+      candidate.length >= 2
+    ) {
+      const yes =
+        normalizePoolRaw(
+          candidate[0]
+        );
 
-      if (yes > 0 || no > 0) {
-        return [String(yes), String(no)];
+      const no =
+        normalizePoolRaw(
+          candidate[1]
+        );
+
+      if (
+        yes > 0 ||
+        no > 0
+      ) {
+        return [
+          String(yes),
+          String(no),
+        ];
       }
     }
 
@@ -242,12 +348,24 @@ function getPools(
         candidate.NO ??
         candidate[1];
 
-      if (yes !== undefined && no !== undefined) {
-        const yesRaw = normalizePoolRaw(yes);
-        const noRaw = normalizePoolRaw(no);
+      if (
+        yes !== undefined &&
+        no !== undefined
+      ) {
+        const yesRaw =
+          normalizePoolRaw(yes);
 
-        if (yesRaw > 0 || noRaw > 0) {
-          return [String(yesRaw), String(noRaw)];
+        const noRaw =
+          normalizePoolRaw(no);
+
+        if (
+          yesRaw > 0 ||
+          noRaw > 0
+        ) {
+          return [
+            String(yesRaw),
+            String(noRaw),
+          ];
         }
       }
     }
@@ -260,12 +378,62 @@ function getPools(
    WINNER
 ========================================================= */
 
-function normalizeWinner(value: any): number | null {
-  if (value === null || value === undefined) {
+function normalizeWinner(
+  value: any
+): number | null {
+  if (
+    value === null ||
+    value === undefined
+  ) {
     return null;
   }
 
-  if (typeof value === "object") {
+  const numeric =
+    asNumber(value);
+
+  if (
+    numeric === 0 ||
+    numeric === 1
+  ) {
+    return numeric;
+  }
+
+  const text =
+    String(value)
+      .trim()
+      .toLowerCase();
+
+  if (
+    text === "yes" ||
+    text === "true" ||
+    text === "0"
+  ) {
+    return 0;
+  }
+
+  if (
+    text === "no" ||
+    text === "false" ||
+    text === "1"
+  ) {
+    return 1;
+  }
+
+  if (
+    text.includes("yes")
+  ) {
+    return 0;
+  }
+
+  if (
+    text.includes("no")
+  ) {
+    return 1;
+  }
+
+  if (
+    typeof value === "object"
+  ) {
     const nested =
       value.optionId ??
       value.optionID ??
@@ -275,31 +443,9 @@ function normalizeWinner(value: any): number | null {
       value.name ??
       value.label;
 
-    return normalizeWinner(nested);
-  }
-
-  const text = String(value).trim().toLowerCase();
-
-  if (text === "yes" || text === "true") {
-    return 0;
-  }
-
-  if (text === "no" || text === "false") {
-    return 1;
-  }
-
-  const numeric = Number(value);
-
-  if (numeric === 0 || numeric === 1) {
-    return numeric;
-  }
-
-  if (text.includes("yes")) {
-    return 0;
-  }
-
-  if (text.includes("no")) {
-    return 1;
+    return normalizeWinner(
+      nested
+    );
   }
 
   return null;
@@ -320,21 +466,43 @@ function getWinningOptionId(
     market.outcome,
     market.result,
 
-    market.stats?.winningOptionId,
-    market.statistics?.winningOptionId,
-    market.metrics?.winningOptionId,
-    market.marketStats?.winningOptionId,
+    market.stats
+      ?.winningOptionId,
 
-    market.rawData?.winningOptionId,
-    market.rawData?.winner,
-    market.rawData?.winningOption,
-    market.rawData?.winningSide,
+    market.statistics
+      ?.winningOptionId,
+
+    market.metrics
+      ?.winningOptionId,
+
+    market.marketStats
+      ?.winningOptionId,
+
+    market.rawData
+      ?.winningOptionId,
+
+    market.rawData
+      ?.winner,
+
+    market.rawData
+      ?.winningOption,
+
+    market.rawData
+      ?.winningSide,
   ];
 
-  for (const candidate of candidates) {
-    const normalized = normalizeWinner(candidate);
+  for (
+    const candidate of candidates
+  ) {
+    const normalized =
+      normalizeWinner(
+        candidate
+      );
 
-    if (normalized === 0 || normalized === 1) {
+    if (
+      normalized === 0 ||
+      normalized === 1
+    ) {
       return normalized;
     }
   }
@@ -379,15 +547,27 @@ function getTradeCount(
 
   let best = 0;
 
-  for (const source of sources) {
-    if (!source || typeof source !== "object") {
+  for (
+    const source of sources
+  ) {
+    if (
+      !source ||
+      typeof source !== "object"
+    ) {
       continue;
     }
 
-    for (const key of numericKeys) {
-      const count = asTradeCount(source[key]);
+    for (
+      const key of numericKeys
+    ) {
+      const count =
+        asTradeCount(
+          source[key]
+        );
 
-      if (count > best) {
+      if (
+        count > best
+      ) {
         best = count;
       }
     }
@@ -406,18 +586,34 @@ function getTradeCount(
     market.metrics?.trades,
     market.marketStats?.trades,
 
-    market.rawData?.recentTradeProfiles,
-    market.rawData?.recentTrades,
+    market.rawData
+      ?.recentTradeProfiles,
+
+    market.rawData
+      ?.recentTrades,
+
     market.rawData?.trades,
-    market.rawData?.tradeHistory,
+
+    market.rawData
+      ?.tradeHistory,
+
     market.rawData?.bets,
   ];
 
-  for (const value of arrays) {
-    const parsed = parseJson(value);
+  for (
+    const value of arrays
+  ) {
+    const parsed =
+      parseJson(value);
 
-    if (Array.isArray(parsed)) {
-      best = Math.max(best, parsed.length);
+    if (
+      Array.isArray(parsed)
+    ) {
+      best =
+        Math.max(
+          best,
+          parsed.length
+        );
     }
   }
 
@@ -432,29 +628,58 @@ function calculateExpectedWinnings(
   pools: any,
   winningOptionId: any
 ): number | null {
-  if (!Array.isArray(pools) || pools.length < 2) {
+  if (
+    !Array.isArray(pools) ||
+    pools.length < 2
+  ) {
     return null;
   }
 
-  const winner = normalizeWinner(winningOptionId);
+  const winner =
+    normalizeWinner(
+      winningOptionId
+    );
 
-  if (winner !== 0 && winner !== 1) {
+  if (
+    winner !== 0 &&
+    winner !== 1
+  ) {
     return null;
   }
 
-  const yesRaw = normalizePoolRaw(pools[0]);
-  const noRaw = normalizePoolRaw(pools[1]);
+  const yesRaw =
+    normalizePoolRaw(
+      pools[0]
+    );
 
-  if (yesRaw <= 0 || noRaw <= 0) {
+  const noRaw =
+    normalizePoolRaw(
+      pools[1]
+    );
+
+  /*
+   * Don't show a fake $0.00 when one side
+   * is unavailable.
+   */
+  if (
+    yesRaw <= 0 ||
+    noRaw <= 0
+  ) {
     return null;
   }
 
-  const total = yesRaw + noRaw;
+  const total =
+    yesRaw + noRaw;
 
   const winningPool =
-    winner === 0 ? yesRaw : noRaw;
+    winner === 0
+      ? yesRaw
+      : noRaw;
 
-  if (total <= 0 || winningPool <= 0) {
+  if (
+    total <= 0 ||
+    winningPool <= 0
+  ) {
     return null;
   }
 
@@ -462,11 +687,17 @@ function calculateExpectedWinnings(
     HYPOTHETICAL_BET *
     (total / winningPool);
 
-  if (!Number.isFinite(payout)) {
+  if (
+    !Number.isFinite(
+      payout
+    )
+  ) {
     return null;
   }
 
-  return Number(payout.toFixed(2));
+  return Number(
+    payout.toFixed(2)
+  );
 }
 
 /* =========================================================
@@ -486,8 +717,11 @@ function getRecordedAt(
     fallback,
   ];
 
-  for (const candidate of candidates) {
-    const result = toIso(candidate);
+  for (
+    const candidate of candidates
+  ) {
+    const result =
+      toIso(candidate);
 
     if (result) {
       return result;
@@ -510,8 +744,11 @@ function getCreditedAt(
     fallback,
   ];
 
-  for (const candidate of candidates) {
-    const result = toIso(candidate);
+  for (
+    const candidate of candidates
+  ) {
+    const result =
+      toIso(candidate);
 
     if (result) {
       return result;
@@ -532,8 +769,11 @@ function getOpenedAt(
     fallback,
   ];
 
-  for (const candidate of candidates) {
-    const result = toIso(candidate);
+  for (
+    const candidate of candidates
+  ) {
+    const result =
+      toIso(candidate);
 
     if (result) {
       return result;
@@ -556,8 +796,11 @@ function getClosedAt(
     fallback,
   ];
 
-  for (const candidate of candidates) {
-    const result = toIso(candidate);
+  for (
+    const candidate of candidates
+  ) {
+    const result =
+      toIso(candidate);
 
     if (result) {
       return result;
@@ -575,26 +818,31 @@ async function convexQuery(
   path: string,
   args: Record<string, any> = {}
 ) {
-  const response = await fetch(
-    CONVEX_URL,
-    {
-      method: "POST",
+  const response =
+    await fetch(
+      CONVEX_URL,
+      {
+        method: "POST",
 
-      headers: {
-        "content-type": "application/json",
-      },
+        headers: {
+          "content-type":
+            "application/json",
+        },
 
-      body: JSON.stringify({
-        path,
-        args,
-        format: "json",
-      }),
+        body: JSON.stringify({
+          path,
+          args,
+          format: "json",
+        }),
 
-      cache: "no-store",
-    }
-  );
+        cache: "no-store",
+      }
+    );
 
-  const data = await response.json().catch(() => null);
+  const data =
+    await response
+      .json()
+      .catch(() => null);
 
   if (!response.ok) {
     const detail =
@@ -603,7 +851,9 @@ async function convexQuery(
       `HTTP ${response.status}`;
 
     throw new Error(
-      `Convex returned ${response.status}: ${String(detail)}`
+      `Convex returned ${response.status}: ${String(
+        detail
+      )}`
     );
   }
 
@@ -613,7 +863,9 @@ async function convexQuery(
   ) {
     throw new Error(
       data?.error
-        ? `Convex query failed: ${String(data.error)}`
+        ? `Convex query failed: ${String(
+            data.error
+          )}`
         : "Convex query failed"
     );
   }
@@ -622,10 +874,65 @@ async function convexQuery(
 }
 
 /* =========================================================
-   KICK
+   KICK DETECTION
 ========================================================= */
 
-function cleanKickChannel(value: any): string | null {
+function isKickHost(
+  value: any
+): boolean {
+  if (
+    typeof value !== "string" ||
+    !value.trim()
+  ) {
+    return false;
+  }
+
+  try {
+    const url =
+      new URL(
+        value.trim()
+      );
+
+    return /(^|\.)kick\.com$/i.test(
+      url.hostname
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isKickChannelUrl(
+  value: string
+): boolean {
+  try {
+    const url =
+      new URL(value);
+
+    if (
+      !/(^|\.)kick\.com$/i.test(
+        url.hostname
+      )
+    ) {
+      return false;
+    }
+
+    const parts =
+      url.pathname
+        .split("/")
+        .filter(Boolean);
+
+    return (
+      parts.length === 1 &&
+      !parts[0].includes(".")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function cleanKickChannel(
+  value: any
+): string | null {
   if (
     typeof value !== "string" ||
     !value.trim()
@@ -633,14 +940,20 @@ function cleanKickChannel(value: any): string | null {
     return null;
   }
 
-  let text = value.trim();
+  let text =
+    value.trim();
 
   try {
     if (
-      text.startsWith("http://") ||
-      text.startsWith("https://")
+      text.startsWith(
+        "http://"
+      ) ||
+      text.startsWith(
+        "https://"
+      )
     ) {
-      const url = new URL(text);
+      const url =
+        new URL(text);
 
       if (
         !/(^|\.)kick\.com$/i.test(
@@ -652,21 +965,25 @@ function cleanKickChannel(value: any): string | null {
             url.hostname
           )
         ) {
-          const parts = url.pathname
-            .split("/")
-            .filter(Boolean);
+          const playerParts =
+            url.pathname
+              .split("/")
+              .filter(Boolean);
 
-          return parts[0]
-            ? decodeURIComponent(parts[0])
+          return playerParts[0]
+            ? decodeURIComponent(
+                playerParts[0]
+              )
             : null;
         }
 
         return null;
       }
 
-      const parts = url.pathname
-        .split("/")
-        .filter(Boolean);
+      const parts =
+        url.pathname
+          .split("/")
+          .filter(Boolean);
 
       if (!parts.length) {
         return null;
@@ -679,16 +996,33 @@ function cleanKickChannel(value: any): string | null {
         return null;
       }
 
-      return decodeURIComponent(parts[0]);
+      return decodeURIComponent(
+        parts[0]
+      );
     }
-  } catch {}
+  } catch {
+    // Continue as slug.
+  }
 
-  text = text
-    .replace(/^@/, "")
-    .replace(/\s+/g, "")
-    .replace(/\/+$/, "");
+  text =
+    text
+      .replace(
+        /^@/,
+        ""
+      )
+      .replace(
+        /\s+/g,
+        ""
+      )
+      .replace(
+        /\/+$/,
+        ""
+      );
 
-  if (!text || text.includes("/")) {
+  if (
+    !text ||
+    text.includes("/")
+  ) {
     return null;
   }
 
@@ -698,11 +1032,12 @@ function cleanKickChannel(value: any): string | null {
 function getKickChannel(
   stream: any
 ): string | null {
-  const raw = parseJson(
-    stream?.raw_data ??
-    stream?.rawData ??
-    {}
-  );
+  const raw =
+    parseJson(
+      stream?.raw_data ??
+      stream?.rawData ??
+      {}
+    );
 
   const candidates = [
     stream?.stream_url,
@@ -762,8 +1097,13 @@ function getKickChannel(
     raw?.host_name,
   ];
 
-  for (const candidate of candidates) {
-    const channel = cleanKickChannel(candidate);
+  for (
+    const candidate of candidates
+  ) {
+    const channel =
+      cleanKickChannel(
+        candidate
+      );
 
     if (channel) {
       return channel;
@@ -774,7 +1114,7 @@ function getKickChannel(
 }
 
 /* =========================================================
-   PLAYBACK
+   PLAYBACK URLS
 ========================================================= */
 
 function getPlayback(
@@ -783,11 +1123,12 @@ function getPlayback(
   originalUrl: string | null;
   embedUrl: string | null;
 } {
-  const raw = parseJson(
-    stream?.raw_data ??
-    stream?.rawData ??
-    {}
-  );
+  const raw =
+    parseJson(
+      stream?.raw_data ??
+      stream?.rawData ??
+      {}
+    );
 
   const playback =
     stream?.recastPlayback ??
@@ -830,7 +1171,15 @@ function getPlayback(
     raw?.kick_live_url,
     raw?.kickLiveUrl,
 
-    raw?._crshmarket_stream_url,
+    raw?.recastPlayback?.originalUrl,
+    raw?.recastPlayback?.original_url,
+    raw?.recastPlayback?.streamUrl,
+    raw?.recastPlayback?.stream_url,
+
+    raw?.recast_playback?.originalUrl,
+    raw?.recast_playback?.original_url,
+    raw?.recast_playback?.streamUrl,
+    raw?.recast_playback?.stream_url,
   ];
 
   const embedCandidates = [
@@ -847,13 +1196,19 @@ function getPlayback(
     raw?.embedUrl,
     raw?.embed_url,
 
-    raw?._crshmarket_stream_embed_url,
+    raw?.recastPlayback?.embedUrl,
+    raw?.recastPlayback?.embed_url,
+
+    raw?.recast_playback?.embedUrl,
+    raw?.recast_playback?.embed_url,
   ];
 
   const findUrl = (
     candidates: any[]
   ): string | null => {
-    for (const value of candidates) {
+    for (
+      const value of candidates
+    ) {
       if (
         typeof value === "string" &&
         value.trim()
@@ -865,10 +1220,18 @@ function getPlayback(
     return null;
   };
 
-  let originalUrl = findUrl(originalCandidates);
-  let embedUrl = findUrl(embedCandidates);
+  let originalUrl =
+    findUrl(
+      originalCandidates
+    );
 
-  const kickChannel = getKickChannel(stream);
+  let embedUrl =
+    findUrl(
+      embedCandidates
+    );
+
+  const kickChannel =
+    getKickChannel(stream);
 
   if (
     kickChannel &&
@@ -897,17 +1260,18 @@ function getPlayback(
 }
 
 /* =========================================================
-   RECORDING
+   RECORDING URL
 ========================================================= */
 
 function getSpecificRecordingUrl(
   stream: any
 ): string | null {
-  const raw = parseJson(
-    stream?.raw_data ??
-    stream?.rawData ??
-    {}
-  );
+  const raw =
+    parseJson(
+      stream?.raw_data ??
+      stream?.rawData ??
+      {}
+    );
 
   const candidates = [
     stream?.resolution_proof_url,
@@ -928,6 +1292,15 @@ function getSpecificRecordingUrl(
     stream?.archive_url,
     stream?.archiveUrl,
 
+    stream?.recastPlayback?.vodUrl,
+    stream?.recastPlayback?.vod_url,
+    stream?.recastPlayback?.replayUrl,
+    stream?.recastPlayback?.replay_url,
+    stream?.recastPlayback?.recordingUrl,
+    stream?.recastPlayback?.recording_url,
+    stream?.recastPlayback?.videoUrl,
+    stream?.recastPlayback?.video_url,
+
     raw?.resolution_proof_url,
     raw?.resolutionProofUrl,
 
@@ -946,10 +1319,20 @@ function getSpecificRecordingUrl(
     raw?.archive_url,
     raw?.archiveUrl,
 
-    raw?._crshmarket_resolution_proof_url,
+    raw?.recastPlayback?.vodUrl,
+    raw?.recastPlayback?.vod_url,
+    raw?.recastPlayback?.replayUrl,
+    raw?.recastPlayback?.replay_url,
+
+    raw?.recast_playback?.vodUrl,
+    raw?.recast_playback?.vod_url,
+    raw?.recast_playback?.replayUrl,
+    raw?.recast_playback?.replay_url,
   ];
 
-  for (const value of candidates) {
+  for (
+    const value of candidates
+  ) {
     if (
       typeof value === "string" &&
       value.trim()
@@ -971,7 +1354,9 @@ function buildResolutionProofUrl(
   resolvedAt: any,
   specificRecordingUrl: string | null = null
 ): string | null {
-  if (specificRecordingUrl) {
+  if (
+    specificRecordingUrl
+  ) {
     return specificRecordingUrl;
   }
 
@@ -979,48 +1364,1013 @@ function buildResolutionProofUrl(
     return null;
   }
 
-  const start = toIso(startedAt);
-  const resolved = toIso(resolvedAt);
-
-  if (!start || !resolved) {
-    return originalUrl;
-  }
-
-  const offsetSeconds = Math.max(
-    0,
-    Math.floor(
-      (
-        Date.parse(resolved) -
-        Date.parse(start)
-      ) / 1000
+  if (
+    isKickChannelUrl(
+      originalUrl
     )
-  );
+  ) {
+    return null;
+  }
 
-  if (!Number.isFinite(offsetSeconds)) {
+  const start =
+    toIso(startedAt);
+
+  const resolved =
+    toIso(resolvedAt);
+
+  if (
+    !start ||
+    !resolved
+  ) {
     return originalUrl;
   }
 
-  try {
-    const url = new URL(originalUrl);
-
-    if (
-      /(^|\.)youtube\.com$/i.test(
-        url.hostname
-      ) ||
-      /(^|\.)youtu\.be$/i.test(
-        url.hostname
+  const offsetSeconds =
+    Math.max(
+      0,
+      Math.floor(
+        (
+          Date.parse(
+            resolved
+          ) -
+          Date.parse(
+            start
+          )
+        ) / 1000
       )
-    ) {
+    );
+
+  if (
+    !Number.isFinite(
+      offsetSeconds
+    )
+  ) {
+    return originalUrl;
+  }
+
+  const hostname =
+    (() => {
+      try {
+        return new URL(
+          originalUrl
+        ).hostname;
+      } catch {
+        return "";
+      }
+    })();
+
+  if (
+    /(^|\.)youtube\.com$/i.test(
+      hostname
+    ) ||
+    /(^|\.)youtu\.be$/i.test(
+      hostname
+    )
+  ) {
+    try {
+      const url =
+        new URL(
+          originalUrl
+        );
+
       url.searchParams.set(
         "t",
-        String(offsetSeconds)
+        String(
+          offsetSeconds
+        )
       );
 
       return url.toString();
+    } catch {
+      return originalUrl;
     }
-  } catch {}
+  }
 
   return originalUrl;
+}
+
+/* =========================================================
+   KICK VOD HELPERS
+========================================================= */
+
+function getKickVideoArray(
+  payload: any
+): any[] {
+  if (
+    Array.isArray(payload)
+  ) {
+    return payload;
+  }
+
+  const candidates = [
+    payload?.videos,
+    payload?.data,
+    payload?.data?.videos,
+    payload?.data?.data,
+    payload?.items,
+    payload?.results,
+  ];
+
+  for (
+    const value of candidates
+  ) {
+    if (
+      Array.isArray(value)
+    ) {
+      return value;
+    }
+  }
+
+  return [];
+}
+
+function getKickPagination(
+  payload: any
+): any {
+  return (
+    payload?.pagination ??
+    payload?.meta?.pagination ??
+    payload?.data?.pagination ??
+    payload?.data?.meta?.pagination ??
+    payload?.meta ??
+    {}
+  );
+}
+
+function getNextKickCursor(
+  payload: any
+): string | null {
+  const pagination =
+    getKickPagination(
+      payload
+    );
+
+  const candidates = [
+    pagination?.next_cursor,
+    pagination?.nextCursor,
+    pagination?.next,
+    pagination?.cursor,
+  ];
+
+  for (
+    const value of candidates
+  ) {
+    if (
+      value !== null &&
+      value !== undefined &&
+      String(value).trim()
+    ) {
+      return String(value);
+    }
+  }
+
+  return null;
+}
+
+function getKickVideoId(
+  video: any
+): string | null {
+  const candidates = [
+    video?.id,
+    video?.uuid,
+    video?.video_id,
+    video?.videoId,
+  ];
+
+  for (
+    const value of candidates
+  ) {
+    if (
+      value !== null &&
+      value !== undefined &&
+      String(value).trim()
+    ) {
+      return String(value);
+    }
+  }
+
+  return null;
+}
+
+function getKickVideoUrl(
+  video: any,
+  channel: string,
+  id: string
+): string {
+  const explicitCandidates = [
+    video?.url,
+    video?.video_url,
+    video?.videoUrl,
+    video?.vod_url,
+    video?.vodUrl,
+    video?.permalink,
+    video?.share_url,
+    video?.shareUrl,
+    video?.href,
+  ];
+
+  for (
+    const value of explicitCandidates
+  ) {
+    if (
+      typeof value !== "string" ||
+      !value.trim()
+    ) {
+      continue;
+    }
+
+    try {
+      const url =
+        new URL(
+          value.trim()
+        );
+
+      if (
+        /(^|\.)kick\.com$/i.test(
+          url.hostname
+        ) &&
+        /\/videos?\//i.test(
+          url.pathname
+        )
+      ) {
+        return url.toString();
+      }
+    } catch {
+      // Ignore.
+    }
+  }
+
+  return (
+    `https://kick.com/${encodeURIComponent(
+      channel
+    )}/videos/${encodeURIComponent(
+      id
+    )}`
+  );
+}
+
+function getKickVideoTimestamp(
+  value: any
+): number | null {
+  const iso =
+    toIso(value);
+
+  if (!iso) {
+    return null;
+  }
+
+  return Date.parse(
+    iso
+  );
+}
+
+function getKickVideoDurationMs(
+  video: any
+): number {
+  const value =
+    video?.duration ??
+    video?.duration_ms ??
+    video?.durationMs ??
+    0;
+
+  const n =
+    Number(value);
+
+  if (
+    !Number.isFinite(n) ||
+    n <= 0
+  ) {
+    return 0;
+  }
+
+  return n < 100000
+    ? n * 1000
+    : n;
+}
+
+function normalizeText(
+  value: any
+): string {
+  return String(
+    value ?? ""
+  )
+    .toLowerCase()
+    .replace(
+      /https?:\/\/\S+/g,
+      " "
+    )
+    .replace(
+      /[^a-z0-9]+/g,
+      " "
+    )
+    .trim();
+}
+
+function titleSimilarity(
+  a: any,
+  b: any
+): number {
+  const first =
+    normalizeText(a);
+
+  const second =
+    normalizeText(b);
+
+  if (
+    !first ||
+    !second
+  ) {
+    return 0;
+  }
+
+  const aWords =
+    new Set(
+      first
+        .split(/\s+/)
+        .filter(
+          (
+            word
+          ) =>
+            word.length >= 3
+        )
+    );
+
+  const bWords =
+    new Set(
+      second
+        .split(/\s+/)
+        .filter(
+          (
+            word
+          ) =>
+            word.length >= 3
+        )
+    );
+
+  if (
+    !aWords.size ||
+    !bWords.size
+  ) {
+    return 0;
+  }
+
+  let common = 0;
+
+  for (
+    const word of aWords
+  ) {
+    if (
+      bWords.has(word)
+    ) {
+      common++;
+    }
+  }
+
+  return (
+    common /
+    Math.max(
+      aWords.size,
+      bWords.size
+    )
+  );
+}
+
+function getKickVideoTitle(
+  video: any
+): string {
+  return (
+    video?.session_title ??
+    video?.sessionTitle ??
+    video?.title ??
+    video?.name ??
+    ""
+  );
+}
+
+/* =========================================================
+   FETCH KICK VODS
+========================================================= */
+
+async function fetchKickVideos(
+  channel: string
+): Promise<any[]> {
+  const allVideos: any[] = [];
+
+  const cursors =
+    new Set<string>();
+
+  let cursor = "0";
+
+  for (
+    let page = 0;
+    page < 12;
+    page++
+  ) {
+    const url =
+      `${KICK_API_BASE}/api/v2/channels/${encodeURIComponent(
+        channel
+      )}/videos?cursor=${encodeURIComponent(
+        cursor
+      )}&sort=date&time=all`;
+
+    try {
+      const response =
+        await fetch(
+          url,
+          {
+            headers: {
+              accept:
+                "application/json, text/plain, */*",
+
+              "user-agent":
+                "Mozilla/5.0 (compatible; CRSHMARKET/1.0)",
+
+              referer:
+                `https://kick.com/${encodeURIComponent(
+                  channel
+                )}`,
+            },
+
+            cache: "no-store",
+
+            signal:
+              AbortSignal.timeout(
+                10000
+              ),
+          }
+        );
+
+      if (
+        !response.ok
+      ) {
+        console.error(
+          "Kick VOD request failed:",
+          channel,
+          response.status
+        );
+
+        break;
+      }
+
+      const payload =
+        await response.json();
+
+      const videos =
+        getKickVideoArray(
+          payload
+        );
+
+      if (
+        !videos.length
+      ) {
+        break;
+      }
+
+      allVideos.push(
+        ...videos
+      );
+
+      const nextCursor =
+        getNextKickCursor(
+          payload
+        );
+
+      if (
+        !nextCursor ||
+        nextCursor === cursor ||
+        cursors.has(
+          nextCursor
+        )
+      ) {
+        break;
+      }
+
+      cursors.add(
+        cursor
+      );
+
+      cursor =
+        nextCursor;
+    } catch (error) {
+      console.error(
+        "Kick VOD fetch error:",
+        channel,
+        error
+      );
+
+      break;
+    }
+  }
+
+  const unique =
+    new Map<
+      string,
+      any
+    >();
+
+  for (
+    const video of allVideos
+  ) {
+    const id =
+      getKickVideoId(
+        video
+      );
+
+    if (!id) {
+      continue;
+    }
+
+    unique.set(
+      String(id),
+      video
+    );
+  }
+
+  return Array.from(
+    unique.values()
+  );
+}
+
+/* =========================================================
+   MATCH KICK VOD TO MARKET
+========================================================= */
+
+function getMarketRaw(
+  market: any
+): any {
+  return parseJson(
+    market?.raw_data ??
+    market?.rawData ??
+    {}
+  );
+}
+
+function getMarketStreamTitle(
+  market: any
+): string {
+  const raw =
+    getMarketRaw(
+      market
+    );
+
+  return (
+    market?.stream_title ??
+    market?.streamTitle ??
+    raw?.title ??
+    raw?.streamTitle ??
+    raw?.stream_title ??
+    raw?.livestream
+      ?.session_title ??
+    raw?.livestream
+      ?.sessionTitle ??
+    raw?.livestream
+      ?.title ??
+    ""
+  );
+}
+
+function getKickMatchScore(
+  market: any,
+  video: any
+): number | null {
+  const openedMs =
+    getKickVideoTimestamp(
+      market?.opened_at ??
+      market?.openedAt ??
+      market?.first_seen_at
+    );
+
+  const closedMs =
+    getKickVideoTimestamp(
+      market?.closed_at ??
+      market?.closedAt
+    );
+
+  const resolvedMs =
+    getKickVideoTimestamp(
+      market?.resolved_at ??
+      market?.resolvedAt
+    );
+
+  const createdMs =
+    getKickVideoTimestamp(
+      video?.created_at ??
+      video?.createdAt ??
+      video?.start_time ??
+      video?.startTime ??
+      video?.started_at ??
+      video?.startedAt
+    );
+
+  if (!createdMs) {
+    return null;
+  }
+
+  const durationMs =
+    getKickVideoDurationMs(
+      video
+    );
+
+  const videoStart =
+    createdMs;
+
+  const videoEnd =
+    durationMs > 0
+      ? createdMs +
+        durationMs
+      : createdMs;
+
+  const targetStart =
+    openedMs ??
+    resolvedMs;
+
+  const targetEnd =
+    closedMs ??
+    resolvedMs ??
+    openedMs;
+
+  let timeDistance =
+    Number.MAX_SAFE_INTEGER;
+
+  if (
+    targetStart &&
+    targetEnd &&
+    videoStart <= targetEnd &&
+    videoEnd >= targetStart
+  ) {
+    timeDistance = 0;
+  } else {
+    const distances: number[] =
+      [];
+
+    if (
+      targetStart
+    ) {
+      distances.push(
+        Math.abs(
+          targetStart -
+          videoStart
+        )
+      );
+
+      if (
+        durationMs > 0
+      ) {
+        distances.push(
+          Math.abs(
+            targetStart -
+            videoEnd
+          )
+        );
+      }
+    }
+
+    if (
+      targetEnd
+    ) {
+      distances.push(
+        Math.abs(
+          targetEnd -
+          videoStart
+        )
+      );
+
+      if (
+        durationMs > 0
+      ) {
+        distances.push(
+          Math.abs(
+            targetEnd -
+            videoEnd
+          )
+        );
+      }
+    }
+
+    if (
+      distances.length
+    ) {
+      timeDistance =
+        Math.min(
+          ...distances
+        );
+    }
+  }
+
+  const marketTitle =
+    getMarketStreamTitle(
+      market
+    );
+
+  const videoTitle =
+    getKickVideoTitle(
+      video
+    );
+
+  const similarity =
+    titleSimilarity(
+      marketTitle,
+      videoTitle
+    );
+
+  if (
+    timeDistance ===
+    Number.MAX_SAFE_INTEGER
+  ) {
+    if (
+      similarity <= 0
+    ) {
+      return null;
+    }
+
+    return (
+      10_000_000 -
+      similarity *
+        1_000_000
+    );
+  }
+
+  const MAX_DISTANCE =
+    6 *
+    60 *
+    60 *
+    1000;
+
+  if (
+    timeDistance >
+      MAX_DISTANCE &&
+    similarity < 0.55
+  ) {
+    return null;
+  }
+
+  return (
+    timeDistance -
+    similarity *
+      30 *
+      60 *
+      1000
+  );
+}
+
+async function resolveKickProofs(
+  markets: any[]
+): Promise<void> {
+  const channelCache =
+    new Map<
+      string,
+      Promise<any[]>
+    >();
+
+  const getVideos = (
+    channel: string
+  ) => {
+    const key =
+      channel
+        .trim()
+        .toLowerCase();
+
+    const existing =
+      channelCache.get(
+        key
+      );
+
+    if (existing) {
+      return existing;
+    }
+
+    const request =
+      fetchKickVideos(
+        channel
+      );
+
+    channelCache.set(
+      key,
+      request
+    );
+
+    return request;
+  };
+
+  await Promise.all(
+    markets.map(
+      async (
+        market
+      ) => {
+        const raw =
+          getMarketRaw(
+            market
+          );
+
+        if (
+          market.resolution_proof_url &&
+          !isKickChannelUrl(
+            market.resolution_proof_url
+          )
+        ) {
+          return;
+        }
+
+        const source = {
+          ...raw,
+          ...market,
+
+          raw_data:
+            raw,
+
+          rawData:
+            raw,
+
+          hostName:
+            market.host_name ??
+            raw?.hostName,
+
+          host_name:
+            market.host_name ??
+            raw?.host_name,
+        };
+
+        const channel =
+          getKickChannel(
+            source
+          );
+
+        if (!channel) {
+          console.warn(
+            "Kick proof: channel not found",
+            {
+              marketId:
+                market.market_id,
+              host:
+                market.host_name,
+              streamUrl:
+                market.stream_url,
+            }
+          );
+
+          return;
+        }
+
+        const videos =
+          await getVideos(
+            channel
+          );
+
+        if (
+          !videos.length
+        ) {
+          console.warn(
+            "Kick proof: no VODs returned",
+            {
+              marketId:
+                market.market_id,
+              channel,
+            }
+          );
+
+          return;
+        }
+
+        let best: {
+          id: string;
+          score: number;
+          url: string;
+          title: string;
+        } | null =
+          null;
+
+        for (
+          const video of videos
+        ) {
+          const id =
+            getKickVideoId(
+              video
+            );
+
+          if (!id) {
+            continue;
+          }
+
+          const score =
+            getKickMatchScore(
+              market,
+              video
+            );
+
+          if (
+            score === null
+          ) {
+            continue;
+          }
+
+          const url =
+            getKickVideoUrl(
+              video,
+              channel,
+              id
+            );
+
+          if (
+            isKickChannelUrl(
+              url
+            )
+          ) {
+            continue;
+          }
+
+          const candidate = {
+            id,
+            score,
+            url,
+            title:
+              getKickVideoTitle(
+                video
+              ),
+          };
+
+          if (
+            !best ||
+            candidate.score <
+              best.score
+          ) {
+            best =
+              candidate;
+          }
+        }
+
+        if (!best) {
+          console.warn(
+            "Kick proof: matching VOD not found",
+            {
+              marketId:
+                market.market_id,
+
+              channel,
+
+              openedAt:
+                market.opened_at,
+
+              closedAt:
+                market.closed_at,
+
+              resolvedAt:
+                market.resolved_at,
+
+              marketTitle:
+                getMarketStreamTitle(
+                  market
+                ),
+            }
+          );
+
+          return;
+        }
+
+        market.resolution_proof_url =
+          best.url;
+
+        if (
+          !market.stream_url
+        ) {
+          market.stream_url =
+            `https://kick.com/${encodeURIComponent(
+              channel
+            )}`;
+        }
+
+        if (
+          !market.stream_embed_url
+        ) {
+          market.stream_embed_url =
+            `https://player.kick.com/${encodeURIComponent(
+              channel
+            )}`;
+        }
+
+        console.log(
+          "Kick proof resolved:",
+          {
+            marketId:
+              market.market_id,
+
+            channel,
+
+            stream:
+              market.stream_url,
+
+            vod:
+              best.url,
+
+            title:
+              best.title,
+
+            score:
+              best.score,
+          }
+        );
+      }
+    )
+  );
 }
 
 /* =========================================================
@@ -1038,40 +2388,72 @@ async function saveMarket(
     return;
   }
 
-  const market = stream.market;
+  const market =
+    stream.market;
 
-  if (!market?.marketId) {
+  if (
+    !market?.marketId
+  ) {
     return;
   }
 
-  const marketId = String(
-    market.marketId
-  );
+  const marketId =
+    String(
+      market.marketId
+    );
 
-  const pools = getPools(market);
-  const incomingTrades = getTradeCount(market);
+  const pools =
+    getPools(
+      market
+    );
 
-  const status = String(
-    market.status ?? "unknown"
-  );
+  const incomingTrades =
+    getTradeCount(
+      market
+    );
 
-  const winner = getWinningOptionId(market);
+  const status =
+    String(
+      market.status ??
+      "unknown"
+    );
 
-  const now = new Date().toISOString();
+  const winner =
+    getWinningOptionId(
+      market
+    );
 
-  const openedAt = getOpenedAt(
-    market,
-    now
-  );
+  const now =
+    new Date().toISOString();
 
-  const resolved = isResolvedStatus(status);
+  const openedAt =
+    getOpenedAt(
+      market,
+      now
+    );
 
-  const resolvedAt = resolved
-    ? (
-        toIso(market.resolvedAt) ??
-        now
-      )
-    : null;
+  const resolved =
+    isResolvedStatus(
+      status
+    );
+
+  const resolvedAt =
+    resolved
+      ? (
+          toIso(
+            market.resolvedAt ??
+            market.resolved_at ??
+            market.recordedAt ??
+            market.recorded_at ??
+            market.closedAt ??
+            market.closed_at ??
+            market.bettingClosedAtMs ??
+            market.bettingCloseRequestedAtMs ??
+            market.lockTime
+          ) ??
+          now
+        )
+      : null;
 
   await sql`
     INSERT INTO markets (
@@ -1098,7 +2480,9 @@ async function saveMarket(
 
       ${
         pools
-          ? JSON.stringify(pools)
+          ? JSON.stringify(
+              pools
+            )
           : null
       }::jsonb,
 
@@ -1121,7 +2505,9 @@ async function saveMarket(
       )}::jsonb
     )
 
-    ON CONFLICT (market_id)
+    ON CONFLICT (
+      market_id
+    )
 
     DO UPDATE SET
 
@@ -1132,7 +2518,24 @@ async function saveMarket(
         ),
 
       status =
-        EXCLUDED.status,
+        CASE
+          WHEN LOWER(
+            COALESCE(
+              markets.status,
+              ''
+            )
+          ) IN (
+            'resolved',
+            'cancelled',
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
+          )
+          THEN markets.status
+          ELSE EXCLUDED.status
+        END,
 
       winning_option_id =
         COALESCE(
@@ -1146,6 +2549,10 @@ async function saveMarket(
           markets.current_pools_usdc
         ),
 
+      /*
+       * NEVER allow a later incomplete snapshot
+       * to reduce the stored trade count.
+       */
       total_trades =
         GREATEST(
           COALESCE(
@@ -1182,15 +2589,24 @@ async function saveMarket(
           markets.viewer_count
         ),
 
+      /*
+       * Keep original opening timestamp.
+       */
       first_seen_at =
         COALESCE(
           markets.first_seen_at,
           EXCLUDED.first_seen_at
         ),
 
+      /*
+       * Always move last_seen forward.
+       */
       last_seen_at =
         EXCLUDED.last_seen_at,
 
+      /*
+       * Once resolved, NEVER erase resolved_at.
+       */
       resolved_at =
         CASE
           WHEN LOWER(
@@ -1201,55 +2617,65 @@ async function saveMarket(
           ) IN (
             'resolved',
             'cancelled',
-            'canceled'
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
           )
           THEN COALESCE(
             markets.resolved_at,
             EXCLUDED.resolved_at
           )
+
           ELSE markets.resolved_at
         END,
 
+      /*
+       * Keep latest raw snapshot.
+       */
       raw_data =
         EXCLUDED.raw_data
   `;
 }
 
 /* =========================================================
-   NORMALIZE DB MARKET
+   DB NORMALIZATION
 ========================================================= */
 
 function normalizeDbMarket(
   row: Record<string, any>
 ) {
-  const raw = parseJson(
-    row.raw_data
-  ) ?? {};
+  const raw =
+    parseJson(
+      row.raw_data
+    ) ?? {};
 
   const rawMarket =
-    raw?.market ?? {};
+    raw?.market ??
+    {};
 
-  const syntheticMarket: ConvexMarket = {
-    ...rawMarket,
+  const syntheticMarket:
+    ConvexMarket = {
+      ...rawMarket,
 
-    winningOptionId:
-      row.winning_option_id ??
-      rawMarket.winningOptionId,
+      winningOptionId:
+        row.winning_option_id ??
+        rawMarket.winningOptionId,
 
-    currentPoolsUsdc:
-      row.current_pools_usdc ??
-      rawMarket.currentPoolsUsdc,
+      currentPoolsUsdc:
+        row.current_pools_usdc ??
+        rawMarket.currentPoolsUsdc,
 
-    status:
-      row.status ??
-      rawMarket.status,
+      status:
+        row.status ??
+        rawMarket.status,
+    };
 
-    rawData: raw,
-  };
-
-  const pools = getPools(
-    syntheticMarket
-  );
+  const pools =
+    getPools(
+      syntheticMarket
+    );
 
   const dbTrades =
     asTradeCount(
@@ -1306,8 +2732,12 @@ function normalizeDbMarket(
   const poolUsd =
     pools
       ? [
-          baseUnitsToUsd(pools[0]),
-          baseUnitsToUsd(pools[1]),
+          baseUnitsToUsd(
+            pools[0]
+          ),
+          baseUnitsToUsd(
+            pools[1]
+          ),
         ]
       : null;
 
@@ -1315,8 +2745,11 @@ function normalizeDbMarket(
     getPlayback({
       ...raw,
 
-      raw_data: raw,
-      rawData: raw,
+      raw_data:
+        raw,
+
+      rawData:
+        raw,
 
       hostName:
         row.host_name ??
@@ -1325,14 +2758,23 @@ function normalizeDbMarket(
       host_name:
         row.host_name ??
         raw?.host_name,
+
+      stream_url:
+        raw?.stream_url,
+
+      streamUrl:
+        raw?.streamUrl,
     });
 
   const kickChannel =
     getKickChannel({
       ...raw,
 
-      raw_data: raw,
-      rawData: raw,
+      raw_data:
+        raw,
+
+      rawData:
+        raw,
 
       hostName:
         row.host_name ??
@@ -1456,15 +2898,18 @@ function normalizeDbMarket(
       finalEmbedUrl,
 
     resolution_proof_url:
-      getSpecificRecordingUrl(raw) ??
-      raw?._crshmarket_resolution_proof_url ??
       buildResolutionProofUrl(
         finalStreamUrl,
+
         raw?.startedAt ??
           raw?.started_at ??
           openedAt,
+
         closedAt,
-        null
+
+        getSpecificRecordingUrl(
+          raw
+        )
       ),
 
     raw_data:
@@ -1473,7 +2918,7 @@ function normalizeDbMarket(
 }
 
 /* =========================================================
-   LOAD PERMANENT HISTORY
+   LOAD RESOLVED MARKETS
 ========================================================= */
 
 async function getResolvedMarkets() {
@@ -1485,52 +2930,84 @@ async function getResolvedMarkets() {
     return [];
   }
 
-  const rows = await sql`
-    SELECT
-      market_id,
-      title,
-      status,
-      winning_option_id,
-      current_pools_usdc,
-      total_trades,
-      stream_id,
-      stream_title,
-      host_name,
-      viewer_count,
-      first_seen_at,
-      last_seen_at,
-      resolved_at,
-      raw_data
-    FROM markets
+  try {
+    const rows =
+      await sql`
+        SELECT
+          market_id,
+          title,
+          status,
+          winning_option_id,
+          current_pools_usdc,
+          total_trades,
+          stream_id,
+          stream_title,
+          host_name,
+          viewer_count,
+          first_seen_at,
+          last_seen_at,
+          resolved_at,
+          raw_data
+        FROM markets
+        WHERE
+          LOWER(
+            COALESCE(
+              status,
+              ''
+            )
+          ) IN (
+            'resolved',
+            'cancelled',
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
+          )
+          OR resolved_at IS NOT NULL
+          OR LOWER(
+            COALESCE(
+              raw_data->'market'->>'status',
+              raw_data->>'status',
+              ''
+            )
+          ) IN (
+            'resolved',
+            'cancelled',
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
+          )
+        ORDER BY
+          COALESCE(
+            resolved_at,
+            last_seen_at,
+            first_seen_at
+          ) DESC
+        LIMIT 500
+      `;
 
-    WHERE LOWER(
-      COALESCE(
-        status,
-        ''
-      )
-    ) IN (
-      'resolved',
-      'cancelled',
-      'canceled'
-    )
+    return rows.map(
+      normalizeDbMarket
+    );
+  } catch (error) {
+    /*
+     * IMPORTANT:
+     * Do not silently hide database failures.
+     */
+    console.error(
+      "CRSHMARKET HISTORY DB LOAD FAILED:",
+      error
+    );
 
-    ORDER BY
-      COALESCE(
-        resolved_at,
-        last_seen_at,
-        first_seen_at
-      ) DESC
-
-    LIMIT 500
-  `;
-
-  return rows.map(
-    normalizeDbMarket
-  );
+    throw error;
+  }
 }
 
 /* =========================================================
-   LIVE STREAM
+   LIVE STREAM NORMALIZATION
 ========================================================= */
 
 function normalizeLiveStream(
@@ -1544,10 +3021,14 @@ function normalizeLiveStream(
   }
 
   const pools =
-    getPools(market);
+    getPools(
+      market
+    );
 
   const winner =
-    getWinningOptionId(market);
+    getWinningOptionId(
+      market
+    );
 
   const expected =
     calculateExpectedWinnings(
@@ -1558,13 +3039,19 @@ function normalizeLiveStream(
   const poolUsd =
     pools
       ? [
-          baseUnitsToUsd(pools[0]),
-          baseUnitsToUsd(pools[1]),
+          baseUnitsToUsd(
+            pools[0]
+          ),
+          baseUnitsToUsd(
+            pools[1]
+          ),
         ]
       : null;
 
   const playback =
-    getPlayback(stream);
+    getPlayback(
+      stream
+    );
 
   return {
     ...stream,
@@ -1590,7 +3077,9 @@ function normalizeLiveStream(
         null,
 
       totalTrades:
-        getTradeCount(market),
+        getTradeCount(
+          market
+        ),
 
       expectedWinnings:
         expected,
@@ -1608,8 +3097,78 @@ function normalizeLiveStream(
 }
 
 /* =========================================================
-   CONVEX RESOLVED
+   CONVEX RESOLVED MARKET NORMALIZATION
 ========================================================= */
+
+/* =========================================================
+   OPTIONAL CONVEX RESOLVED HISTORY
+
+   Some Convex deployments remove resolved markets from
+   streams:getActive immediately. If a resolved/history query
+   exists, use it. If it does not exist, silently continue and
+   rely on PostgreSQL history.
+========================================================= */
+
+function extractStreamArray(
+  payload: any
+): ConvexStream[] {
+  const candidates = [
+    payload?.value?.resolvedStreams,
+    payload?.value?.streams,
+    payload?.value?.markets,
+    payload?.value?.history,
+    payload?.resolvedStreams,
+    payload?.streams,
+    payload?.markets,
+    payload?.history,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate as ConvexStream[];
+    }
+  }
+
+  return [];
+}
+
+async function getOptionalConvexResolvedStreams(): Promise<ConvexStream[]> {
+  const paths = [
+    "streams:getResolved",
+    "streams:getResolvedMarkets",
+    "streams:getHistory",
+  ];
+
+  for (const path of paths) {
+    try {
+      const response =
+        await convexQuery(path);
+
+      const streams =
+        extractStreamArray(response);
+
+      if (streams.length) {
+        console.log(
+          "CRSHMARKET: Convex resolved history loaded:",
+          path,
+          streams.length
+        );
+
+        return streams;
+      }
+    } catch (error) {
+      console.warn(
+        "CRSHMARKET: optional Convex history query unavailable:",
+        path,
+        error instanceof Error
+          ? error.message
+          : error
+      );
+    }
+  }
+
+  return [];
+}
 
 function normalizeConvexResolvedMarket(
   stream: ConvexStream
@@ -1627,8 +3186,40 @@ function normalizeConvexResolvedMarket(
   const winner =
     getWinningOptionId(market);
 
-  const tradeCount =
-    getTradeCount(market);
+  const resolvedAt =
+    toIso(
+      market.resolvedAt ??
+      market.resolved_at ??
+      market.recordedAt ??
+      market.recorded_at ??
+      market.closedAt ??
+      market.closed_at
+    ) ??
+    new Date().toISOString();
+
+  const openedAt =
+    getOpenedAt(market);
+
+  const closedAt =
+    getClosedAt(
+      market,
+      resolvedAt
+    );
+
+  const recordedAt =
+    getRecordedAt(
+      market,
+      resolvedAt
+    );
+
+  const creditedAt =
+    getCreditedAt(
+      market,
+      recordedAt ?? resolvedAt
+    );
+
+  const playback =
+    getPlayback(stream);
 
   const poolUsd =
     pools
@@ -1638,46 +3229,15 @@ function normalizeConvexResolvedMarket(
         ]
       : null;
 
-  const resolvedNow =
-    toIso(market.resolvedAt) ??
-    new Date().toISOString();
-
-  const openedAt =
-    getOpenedAt(market);
-
-  const closedAt =
-    getClosedAt(
-      market,
-      resolvedNow
-    );
-
-  const recordedAt =
-    getRecordedAt(
-      market,
-      resolvedNow
-    );
-
-  const creditedAt =
-    getCreditedAt(
-      market,
-      recordedAt ??
-        resolvedNow
-    );
-
-  const playback =
-    getPlayback(stream);
-
   return {
     market_id:
-      String(
-        market.marketId
-      ),
+      String(market.marketId),
 
     title:
       market.title,
 
     status:
-      market.status,
+      market.status ?? "resolved",
 
     winning_option_id:
       winner,
@@ -1689,15 +3249,13 @@ function normalizeConvexResolvedMarket(
       poolUsd,
 
     yes_pool_usd:
-      poolUsd?.[0] ??
-      null,
+      poolUsd?.[0] ?? null,
 
     no_pool_usd:
-      poolUsd?.[1] ??
-      null,
+      poolUsd?.[1] ?? null,
 
     total_trades:
-      tradeCount,
+      getTradeCount(market),
 
     stream_id:
       stream.id,
@@ -1709,13 +3267,10 @@ function normalizeConvexResolvedMarket(
       stream.hostName,
 
     viewer_count:
-      asNumber(
-        stream.viewerCount
-      ) ?? 0,
+      asNumber(stream.viewerCount) ?? 0,
 
     first_seen_at:
-      openedAt ??
-      undefined,
+      openedAt ?? undefined,
 
     opened_at:
       openedAt,
@@ -1730,10 +3285,10 @@ function normalizeConvexResolvedMarket(
       creditedAt,
 
     last_seen_at:
-      resolvedNow,
+      resolvedAt,
 
     resolved_at:
-      resolvedNow,
+      resolvedAt,
 
     expected_winnings:
       calculateExpectedWinnings(
@@ -1750,8 +3305,7 @@ function normalizeConvexResolvedMarket(
     resolution_proof_url:
       buildResolutionProofUrl(
         playback.originalUrl,
-        stream.startedAt ??
-          openedAt,
+        stream.startedAt ?? openedAt,
         closedAt,
         getSpecificRecordingUrl(stream)
       ),
@@ -1762,140 +3316,15 @@ function normalizeConvexResolvedMarket(
 }
 
 /* =========================================================
-   MERGE HISTORY SAFELY
-========================================================= */
-
-function mergeHistoryMarkets(
-  existing: any,
-  incoming: any
-) {
-  if (!existing) {
-    return incoming;
-  }
-
-  return {
-    ...existing,
-
-    ...incoming,
-
-    /*
-     * NEVER lose trade history.
-     */
-    total_trades:
-      Math.max(
-        asTradeCount(
-          existing.total_trades
-        ),
-        asTradeCount(
-          incoming.total_trades
-        )
-      ),
-
-    /*
-     * NEVER lose winner.
-     */
-    winning_option_id:
-      incoming.winning_option_id ??
-      existing.winning_option_id ??
-      null,
-
-    /*
-     * NEVER lose pools.
-     */
-    current_pools_usdc:
-      incoming.current_pools_usdc ??
-      existing.current_pools_usdc ??
-      null,
-
-    current_pools_usd:
-      incoming.current_pools_usd ??
-      existing.current_pools_usd ??
-      null,
-
-    yes_pool_usd:
-      incoming.yes_pool_usd ??
-      existing.yes_pool_usd ??
-      null,
-
-    no_pool_usd:
-      incoming.no_pool_usd ??
-      existing.no_pool_usd ??
-      null,
-
-    /*
-     * NEVER lose timestamps.
-     */
-    opened_at:
-      existing.opened_at ??
-      incoming.opened_at ??
-      null,
-
-    closed_at:
-      existing.closed_at ??
-      incoming.closed_at ??
-      null,
-
-    recorded_at:
-      existing.recorded_at ??
-      incoming.recorded_at ??
-      null,
-
-    credited_at:
-      existing.credited_at ??
-      incoming.credited_at ??
-      null,
-
-    first_seen_at:
-      existing.first_seen_at ??
-      incoming.first_seen_at ??
-      null,
-
-    last_seen_at:
-      incoming.last_seen_at ??
-      existing.last_seen_at ??
-      null,
-
-    resolved_at:
-      existing.resolved_at ??
-      incoming.resolved_at ??
-      null,
-
-    /*
-     * NEVER lose URLs/proof.
-     */
-    stream_url:
-      incoming.stream_url ??
-      existing.stream_url ??
-      null,
-
-    stream_embed_url:
-      incoming.stream_embed_url ??
-      existing.stream_embed_url ??
-      null,
-
-    resolution_proof_url:
-      incoming.resolution_proof_url ??
-      existing.resolution_proof_url ??
-      null,
-
-    expected_winnings:
-      incoming.expected_winnings ??
-      existing.expected_winnings ??
-      null,
-
-    raw_data:
-      incoming.raw_data ??
-      existing.raw_data ??
-      {},
-  };
-}
-
-/* =========================================================
    MAIN API
 ========================================================= */
 
 export async function GET() {
   try {
+    /*
+     * Fail early in production if database
+     * configuration is missing.
+     */
     if (!sql) {
       console.error(
         "CRSHMARKET PRODUCTION ERROR: DATABASE_URL / POSTGRES_URL is missing."
@@ -1903,37 +3332,71 @@ export async function GET() {
     }
 
     /*
-     * Get current Convex streams.
+     * Get currently active Convex streams.
      */
     const convex =
       await convexQuery(
         "streams:getActive"
       );
 
-    const sourceStreams =
+    const activeSourceStreams: ConvexStream[] =
       Array.isArray(
         convex?.value?.activeStreams
       )
         ? convex.value.activeStreams
         : [];
 
+    const optionalResolvedStreams =
+      await getOptionalConvexResolvedStreams();
+
     /*
-     * Normalize current streams.
+     * Keep the UI's live list strictly live.
+     * Optional resolved streams are used for persistence/history only.
      */
+    const sourceStreams =
+      activeSourceStreams;
+
+    const allPersistenceStreams =
+      new Map<string, ConvexStream>();
+
+    for (const stream of [
+      ...activeSourceStreams,
+      ...optionalResolvedStreams,
+    ]) {
+      const id =
+        stream?.market?.marketId;
+
+      if (id !== null && id !== undefined) {
+        allPersistenceStreams.set(
+          String(id),
+          stream
+        );
+      }
+    }
+
+    const persistenceStreams =
+      Array.from(
+        allPersistenceStreams.values()
+      );
+
+    /* -----------------------------------------
+       Normalize live streams
+    ----------------------------------------- */
+
     const activeStreams =
       sourceStreams.map(
         normalizeLiveStream
       );
 
-    /*
-     * SAVE EVERY SNAPSHOT.
-     *
-     * IMPORTANT:
-     * This remains persistent in Postgres.
-     */
+    /* -----------------------------------------
+       SAVE EVERY CURRENT SNAPSHOT
+       
+       This is what makes history persistent.
+    ----------------------------------------- */
+
     if (sql) {
       await Promise.all(
-        activeStreams.map(
+        persistenceStreams.map(
           async (
             stream: ConvexStream
           ) => {
@@ -1953,21 +3416,48 @@ export async function GET() {
       );
     }
 
-    /*
-     * Load ALL permanent resolved history
-     * from Postgres.
-     *
-     * This is now the primary source of truth.
-     */
-    let resolvedMarkets =
+    /* -----------------------------------------
+       LOAD PERMANENT DB HISTORY
+    ----------------------------------------- */
+
+    let resolvedMarkets:
+      any[] = [];
+
+    resolvedMarkets =
       await getResolvedMarkets();
 
-    /*
-     * If Convex still exposes resolved markets,
-     * merge them with DB.
-     */
+    /* -----------------------------------------
+       FRESH RESOLVED MARKETS FROM CONVEX
+       
+       If Convex still includes a resolved
+       market, merge it with DB.
+    ----------------------------------------- */
+
+    const resolvedCandidates =
+      Array.from(
+        new Map(
+          [
+            ...activeSourceStreams,
+            ...optionalResolvedStreams,
+          ]
+            .filter(
+              (stream) =>
+                stream?.market?.marketId !==
+                null &&
+                stream?.market?.marketId !==
+                undefined
+            )
+            .map((stream) => [
+              String(
+                stream.market!.marketId
+              ),
+              stream,
+            ])
+        ).values()
+      );
+
     const convexResolved =
-      activeStreams
+      resolvedCandidates
         .filter(
           (
             stream: ConvexStream
@@ -1981,12 +3471,19 @@ export async function GET() {
         )
         .filter(Boolean);
 
-    /*
-     * DB first.
-     */
-    const historyMap =
-      new Map<string, any>();
+    /* -----------------------------------------
+       MERGE DB + CONVEX
+    ----------------------------------------- */
 
+    const historyMap =
+      new Map<
+        string,
+        any
+      >();
+
+    /*
+     * DB is the persistent source of truth.
+     */
     for (
       const market of resolvedMarkets
     ) {
@@ -1999,8 +3496,9 @@ export async function GET() {
     }
 
     /*
-     * Convex can update DB history,
-     * but it can NEVER destroy stored values.
+     * Fresh Convex data can update existing
+     * history, but must NEVER destroy stored
+     * values such as trade count/timestamps.
      */
     for (
       const market of convexResolved
@@ -2015,61 +3513,300 @@ export async function GET() {
         );
 
       const existing =
-        historyMap.get(key);
+        historyMap.get(
+          key
+        );
+
+      if (existing) {
+        /*
+         * NEVER decrease trade count.
+         */
+        market.total_trades =
+          Math.max(
+            asTradeCount(
+              existing.total_trades
+            ),
+            asTradeCount(
+              market.total_trades
+            )
+          );
+
+        /*
+         * Preserve stored pools if fresh
+         * Convex snapshot doesn't have them.
+         */
+        if (
+          !market.current_pools_usdc &&
+          existing.current_pools_usdc
+        ) {
+          market.current_pools_usdc =
+            existing.current_pools_usdc;
+        }
+
+        if (
+          !market.current_pools_usd &&
+          existing.current_pools_usd
+        ) {
+          market.current_pools_usd =
+            existing.current_pools_usd;
+        }
+
+        if (
+          market.expected_winnings ===
+            null ||
+          market.expected_winnings ===
+            undefined
+        ) {
+          market.expected_winnings =
+            existing.expected_winnings;
+        }
+
+        if (
+          market.winning_option_id ===
+            null ||
+          market.winning_option_id ===
+            undefined
+        ) {
+          market.winning_option_id =
+            existing.winning_option_id;
+        }
+
+        if (
+          !market.stream_url
+        ) {
+          market.stream_url =
+            existing.stream_url;
+        }
+
+        if (
+          !market.stream_embed_url
+        ) {
+          market.stream_embed_url =
+            existing.stream_embed_url;
+        }
+
+        if (
+          !market.resolution_proof_url
+        ) {
+          market.resolution_proof_url =
+            existing.resolution_proof_url;
+        }
+
+        /*
+         * Preserve all original timestamps.
+         */
+        market.opened_at =
+          existing.opened_at ??
+          market.opened_at;
+
+        market.closed_at =
+          existing.closed_at ??
+          market.closed_at;
+
+        market.recorded_at =
+          existing.recorded_at ??
+          market.recorded_at;
+
+        market.credited_at =
+          existing.credited_at ??
+          market.credited_at;
+
+        market.first_seen_at =
+          existing.first_seen_at ??
+          market.first_seen_at;
+
+        market.last_seen_at =
+          existing.last_seen_at ??
+          market.last_seen_at;
+
+        market.resolved_at =
+          existing.resolved_at ??
+          market.resolved_at;
+      }
 
       historyMap.set(
         key,
-        mergeHistoryMarkets(
-          existing,
-          market
-        )
+        market
       );
     }
 
-    /*
-     * Final persistent history.
-     */
     resolvedMarkets =
       Array.from(
         historyMap.values()
       );
 
-    /*
-     * Sort newest first.
-     */
-    resolvedMarkets.sort(
-      (
-        a,
-        b
-      ) => {
-        const aTime =
-          Date.parse(
-            a.resolved_at ??
-              a.credited_at ??
-              a.recorded_at ??
-              a.last_seen_at ??
-              ""
-          ) || 0;
-
-        const bTime =
-          Date.parse(
-            b.resolved_at ??
-              b.credited_at ??
-              b.recorded_at ??
-              b.last_seen_at ??
-              ""
-          ) || 0;
-
-        return bTime - aTime;
-      }
+    console.log(
+      "CRSHMARKET HISTORY FINAL COUNT:",
+      resolvedMarkets.length
     );
 
-    /*
-     * Final response.
-     */
+    /* -----------------------------------------
+       KICK VOD RESOLUTION
+    ----------------------------------------- */
+
+    await resolveKickProofs(
+      resolvedMarkets
+    );
+
+    /* -----------------------------------------
+       Persist any proof updates
+       
+       This makes VOD proof survive refreshes
+       instead of only existing in memory.
+    ----------------------------------------- */
+
+    if (sql) {
+      await Promise.all(
+        resolvedMarkets.map(
+          async (
+            market
+          ) => {
+            if (
+              !market?.market_id
+            ) {
+              return;
+            }
+
+            try {
+              const proof =
+                market.resolution_proof_url ??
+                null;
+
+              const streamUrl =
+                market.stream_url ??
+                null;
+
+              const embedUrl =
+                market.stream_embed_url ??
+                null;
+
+              await sql`
+                UPDATE markets
+                SET
+                  raw_data =
+                    CASE
+                      WHEN raw_data IS NULL
+                      THEN ${JSON.stringify(
+                        market.raw_data ??
+                          {}
+                      )}::jsonb
+
+                      ELSE raw_data
+                    END
+                WHERE market_id =
+                  ${String(
+                    market.market_id
+                  )}
+              `;
+
+              /*
+               * Only update proof columns if those
+               * columns exist in the user's schema.
+               *
+               * The main raw_data remains untouched.
+               */
+              if (
+                proof ||
+                streamUrl ||
+                embedUrl
+              ) {
+                try {
+                  await sql`
+                    UPDATE markets
+                    SET
+                      raw_data =
+                        jsonb_set(
+                          jsonb_set(
+                            jsonb_set(
+                              COALESCE(
+                                raw_data,
+                                '{}'::jsonb
+                              ),
+                              '{_crshmarket_stream_url}',
+                              ${JSON.stringify(
+                                streamUrl
+                              )}::jsonb,
+                              true
+                            ),
+                            '{_crshmarket_stream_embed_url}',
+                            ${JSON.stringify(
+                              embedUrl
+                            )}::jsonb,
+                            true
+                          ),
+                          '{_crshmarket_resolution_proof_url}',
+                          ${JSON.stringify(
+                            proof
+                          )}::jsonb,
+                          true
+                        )
+                    WHERE market_id =
+                      ${String(
+                        market.market_id
+                      )}
+                  `;
+                } catch (proofError) {
+                  console.warn(
+                    "Could not persist proof metadata:",
+                    proofError
+                  );
+                }
+              }
+            } catch (error) {
+              console.warn(
+                "Resolved market persistence update failed:",
+                market.market_id,
+                error
+              );
+            }
+          }
+        )
+      );
+    }
+
+    /* -----------------------------------------
+       Sort history newest first
+    ----------------------------------------- */
+
+    resolvedMarkets =
+      resolvedMarkets.sort(
+        (
+          a,
+          b
+        ) => {
+          const aTime =
+            Date.parse(
+              a.resolved_at ??
+                a.credited_at ??
+                a.recorded_at ??
+                a.last_seen_at ??
+                ""
+            ) || 0;
+
+          const bTime =
+            Date.parse(
+              b.resolved_at ??
+                b.credited_at ??
+                b.recorded_at ??
+                b.last_seen_at ??
+                ""
+            ) || 0;
+
+          return (
+            bTime -
+            aTime
+          );
+        }
+      );
+
+    /* -----------------------------------------
+       Final response
+    ----------------------------------------- */
+
     return NextResponse.json(
       {
-        status: "success",
+        status:
+          "success",
 
         value: {
           activeStreams,
@@ -2081,9 +3818,11 @@ export async function GET() {
           "Cache-Control":
             "no-store, no-cache, must-revalidate, proxy-revalidate",
 
-          Pragma: "no-cache",
+          Pragma:
+            "no-cache",
 
-          Expires: "0",
+          Expires:
+            "0",
         },
       }
     );
@@ -2095,7 +3834,8 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        status: "error",
+        status:
+          "error",
 
         error:
           error instanceof Error
