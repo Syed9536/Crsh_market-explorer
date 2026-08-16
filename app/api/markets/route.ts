@@ -191,7 +191,11 @@ function isResolvedStatus(
   return (
     value === "resolved" ||
     value === "cancelled" ||
-    value === "canceled"
+    value === "canceled" ||
+    value === "settled" ||
+    value === "complete" ||
+    value === "completed" ||
+    value === "finalized"
   );
 }
 
@@ -2536,8 +2540,29 @@ async function saveMarket(
           markets.title
         ),
 
+      /*
+       * Once a market is resolved, never let a later
+       * incomplete/active snapshot turn it back into a live row.
+       */
       status =
-        EXCLUDED.status,
+        CASE
+          WHEN LOWER(
+            COALESCE(
+              markets.status,
+              ''
+            )
+          ) IN (
+            'resolved',
+            'cancelled',
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
+          )
+          THEN markets.status
+          ELSE EXCLUDED.status
+        END,
 
       winning_option_id =
         COALESCE(
@@ -2619,7 +2644,11 @@ async function saveMarket(
           ) IN (
             'resolved',
             'cancelled',
-            'canceled'
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
           )
           THEN COALESCE(
             markets.resolved_at,
@@ -2919,6 +2948,61 @@ async function getResolvedMarkets() {
   }
 
   try {
+    /*
+     * A resolved market is permanent history. Repair older rows
+     * if a later snapshot accidentally left the status as live.
+     */
+    await sql`
+      UPDATE markets
+      SET
+        status = 'resolved',
+        resolved_at = COALESCE(
+          resolved_at,
+          last_seen_at,
+          first_seen_at,
+          NOW()
+        )
+      WHERE
+        resolved_at IS NOT NULL
+        AND LOWER(COALESCE(status, '')) NOT IN (
+          'resolved',
+          'cancelled',
+          'canceled',
+          'settled',
+          'complete',
+          'completed',
+          'finalized'
+        )
+    `;
+
+    await sql`
+      UPDATE markets
+      SET
+        status = 'resolved',
+        resolved_at = COALESCE(
+          resolved_at,
+          last_seen_at,
+          first_seen_at,
+          NOW()
+        )
+      WHERE
+        LOWER(
+          COALESCE(
+            raw_data->'market'->>'status',
+            raw_data->>'status',
+            ''
+          )
+        ) IN (
+          'resolved',
+          'cancelled',
+          'canceled',
+          'settled',
+          'complete',
+          'completed',
+          'finalized'
+        )
+    `;
+
     const rows =
       await sql`
         SELECT
@@ -2937,32 +3021,47 @@ async function getResolvedMarkets() {
           resolved_at,
           raw_data
         FROM markets
-        WHERE LOWER(
-          COALESCE(
-            status,
-            ''
+        WHERE
+          LOWER(
+            COALESCE(status, '')
+          ) IN (
+            'resolved',
+            'cancelled',
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
           )
-        ) IN (
-          'resolved',
-          'cancelled',
-          'canceled'
-        )
+          OR resolved_at IS NOT NULL
+          OR LOWER(
+            COALESCE(
+              raw_data->'market'->>'status',
+              raw_data->>'status',
+              ''
+            )
+          ) IN (
+            'resolved',
+            'cancelled',
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
+          )
         ORDER BY
           COALESCE(
             resolved_at,
             last_seen_at,
             first_seen_at
           ) DESC
+        LIMIT 5000
       `;
 
     return rows.map(
       normalizeDbMarket
     );
   } catch (error) {
-    /*
-     * IMPORTANT:
-     * Do not silently hide database failures.
-     */
     console.error(
       "CRSHMARKET HISTORY DB LOAD FAILED:",
       error
@@ -2970,6 +3069,104 @@ async function getResolvedMarkets() {
 
     throw error;
   }
+}
+
+/* =========================================================
+   OPTIONAL CONVEX RESOLVED HISTORY
+
+   Resolved markets can disappear from streams:getActive
+   immediately after settlement. These queries are used only
+   for persistence/history. The live UI still uses getActive.
+========================================================= */
+
+function extractStreamArray(
+  payload: any
+): ConvexStream[] {
+  const candidates = [
+    payload?.value?.resolvedStreams,
+    payload?.value?.streams,
+    payload?.value?.markets,
+    payload?.value?.history,
+    payload?.resolvedStreams,
+    payload?.streams,
+    payload?.markets,
+    payload?.history,
+  ];
+
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) {
+      continue;
+    }
+
+    return candidate
+      .map((item: any) => {
+        if (item?.market?.marketId) {
+          return {
+            ...item,
+            market: {
+              ...item.market,
+              status:
+                item.market.status ??
+                "resolved",
+            },
+          } as ConvexStream;
+        }
+
+        if (item?.marketId) {
+          return {
+            market: {
+              ...item,
+              status:
+                item.status ??
+                "resolved",
+            },
+          } as ConvexStream;
+        }
+
+        return null;
+      })
+      .filter(Boolean) as ConvexStream[];
+  }
+
+  return [];
+}
+
+async function getOptionalConvexResolvedStreams(): Promise<ConvexStream[]> {
+  const paths = [
+    "streams:getResolved",
+    "streams:getResolvedMarkets",
+    "streams:getHistory",
+  ];
+
+  for (const path of paths) {
+    try {
+      const response =
+        await convexQuery(path);
+
+      const streams =
+        extractStreamArray(response);
+
+      if (streams.length) {
+        console.log(
+          "CRSHMARKET: Convex resolved history loaded:",
+          path,
+          streams.length
+        );
+
+        return streams;
+      }
+    } catch (error) {
+      console.warn(
+        "CRSHMARKET: optional Convex history query unavailable:",
+        path,
+        error instanceof Error
+          ? error.message
+          : error
+      );
+    }
+  }
+
+  return [];
 }
 
 /* =========================================================
@@ -3256,12 +3453,46 @@ export async function GET() {
         "streams:getActive"
       );
 
-    const sourceStreams =
+    const activeSourceStreams: ConvexStream[] =
       Array.isArray(
         convex?.value?.activeStreams
       )
         ? convex.value.activeStreams
         : [];
+
+    /*
+     * Resolved markets may disappear from getActive immediately.
+     * Pull the optional history source as well, but never expose it
+     * as a live market.
+     */
+    const optionalResolvedStreams =
+      await getOptionalConvexResolvedStreams();
+
+    const sourceStreams =
+      activeSourceStreams;
+
+    const allPersistenceStreams =
+      new Map<string, ConvexStream>();
+
+    for (const stream of [
+      ...activeSourceStreams,
+      ...optionalResolvedStreams,
+    ]) {
+      const id =
+        stream?.market?.marketId;
+
+      if (id !== null && id !== undefined) {
+        allPersistenceStreams.set(
+          String(id),
+          stream
+        );
+      }
+    }
+
+    const persistenceStreams =
+      Array.from(
+        allPersistenceStreams.values()
+      );
 
     /* -----------------------------------------
        Normalize live streams
@@ -3274,13 +3505,13 @@ export async function GET() {
 
     /* -----------------------------------------
        SAVE EVERY CURRENT SNAPSHOT
-       
+
        This is what makes history persistent.
     ----------------------------------------- */
 
     if (sql) {
       await Promise.all(
-        activeStreams.map(
+        persistenceStreams.map(
           async (
             stream: ConvexStream
           ) => {
@@ -3317,8 +3548,31 @@ export async function GET() {
        market, merge it with DB.
     ----------------------------------------- */
 
+    const resolvedCandidates =
+      Array.from(
+        new Map(
+          [
+            ...activeSourceStreams,
+            ...optionalResolvedStreams,
+          ]
+            .filter(
+              (stream) =>
+                stream?.market?.marketId !==
+                  null &&
+                stream?.market?.marketId !==
+                  undefined
+            )
+            .map((stream) => [
+              String(
+                stream.market!.marketId
+              ),
+              stream,
+            ])
+        ).values()
+      );
+
     const convexResolved =
-      activeStreams
+      resolvedCandidates
         .filter(
           (
             stream: ConvexStream
