@@ -191,11 +191,7 @@ function isResolvedStatus(
   return (
     value === "resolved" ||
     value === "cancelled" ||
-    value === "canceled" ||
-    value === "settled" ||
-    value === "complete" ||
-    value === "completed" ||
-    value === "finalized"
+    value === "canceled"
   );
 }
 
@@ -1375,11 +1371,10 @@ function buildMarketActivityUrl(
   );
 }
 
-/*
- * Recording/VOD resolution is kept separately from the CRSHMARKET
- * market proof. The UI's RESOLUTION PROOF button must always open
- * the exact CRSHMARKET market-activity page, never the source stream.
- */
+/* =========================================================
+   RESOLUTION PROOF
+========================================================= */
+
 function buildResolutionProofUrl(
   originalUrl: string | null,
   startedAt: any,
@@ -2358,23 +2353,8 @@ async function resolveKickProofs(
           return;
         }
 
-        /*
-         * Keep the exact VOD as recording metadata only.
-         * resolution_proof_url is reserved for the CRSHMARKET
-         * market-activity proof URL and must never become a stream/VOD URL.
-         */
-        const marketRaw =
-          parseJson(
-            market.raw_data ??
-            market.rawData ??
-            {}
-          ) ?? {};
-
-        market.raw_data = {
-          ...marketRaw,
-          _crshmarket_recording_url:
-            best.url,
-        };
+        market.resolution_proof_url =
+          best.url;
 
         if (
           !market.stream_url
@@ -2488,15 +2468,7 @@ async function saveMarket(
     resolved
       ? (
           toIso(
-            market.resolvedAt ??
-            market.resolved_at ??
-            market.recordedAt ??
-            market.recorded_at ??
-            market.closedAt ??
-            market.closed_at ??
-            market.bettingClosedAtMs ??
-            market.bettingCloseRequestedAtMs ??
-            market.lockTime
+            market.resolvedAt
           ) ??
           now
         )
@@ -2565,24 +2537,7 @@ async function saveMarket(
         ),
 
       status =
-        CASE
-          WHEN LOWER(
-            COALESCE(
-              markets.status,
-              ''
-            )
-          ) IN (
-            'resolved',
-            'cancelled',
-            'canceled',
-            'settled',
-            'complete',
-            'completed',
-            'finalized'
-          )
-          THEN markets.status
-          ELSE EXCLUDED.status
-        END,
+        EXCLUDED.status,
 
       winning_option_id =
         COALESCE(
@@ -2664,11 +2619,7 @@ async function saveMarket(
           ) IN (
             'resolved',
             'cancelled',
-            'canceled',
-            'settled',
-            'complete',
-            'completed',
-            'finalized'
+            'canceled'
           )
           THEN COALESCE(
             markets.resolved_at,
@@ -2968,62 +2919,6 @@ async function getResolvedMarkets() {
   }
 
   try {
-    /*
-     * Repair older rows that were already resolved but whose
-     * status was later overwritten by an incomplete snapshot.
-     * A non-null resolved_at is permanent history.
-     */
-    await sql`
-      UPDATE markets
-      SET
-        status = 'resolved',
-        resolved_at = COALESCE(
-          resolved_at,
-          last_seen_at,
-          first_seen_at,
-          NOW()
-        )
-      WHERE
-        resolved_at IS NOT NULL
-        AND LOWER(COALESCE(status, '')) NOT IN (
-          'resolved',
-          'cancelled',
-          'canceled',
-          'settled',
-          'complete',
-          'completed',
-          'finalized'
-        )
-    `;
-
-    /*
-     * Also repair rows whose latest raw snapshot says resolved,
-     * even when the relational status column was not updated.
-     * Use the stored observation time as the safe fallback instead
-     * of assuming the raw timestamp format.
-     */
-    await sql`
-      UPDATE markets
-      SET
-        status = 'resolved',
-        resolved_at = COALESCE(
-          resolved_at,
-          last_seen_at,
-          first_seen_at,
-          NOW()
-        )
-      WHERE
-        LOWER(COALESCE(raw_data->'market'->>'status', raw_data->>'status', '')) IN (
-          'resolved',
-          'cancelled',
-          'canceled',
-          'settled',
-          'complete',
-          'completed',
-          'finalized'
-        )
-    `;
-
     const rows =
       await sql`
         SELECT
@@ -3042,44 +2937,22 @@ async function getResolvedMarkets() {
           resolved_at,
           raw_data
         FROM markets
-        WHERE
-          LOWER(
-            COALESCE(
-              status,
-              ''
-            )
-          ) IN (
-            'resolved',
-            'cancelled',
-            'canceled',
-            'settled',
-            'complete',
-            'completed',
-            'finalized'
+        WHERE LOWER(
+          COALESCE(
+            status,
+            ''
           )
-          OR resolved_at IS NOT NULL
-          OR LOWER(
-            COALESCE(
-              raw_data->'market'->>'status',
-              raw_data->>'status',
-              ''
-            )
-          ) IN (
-            'resolved',
-            'cancelled',
-            'canceled',
-            'settled',
-            'complete',
-            'completed',
-            'finalized'
-          )
+        ) IN (
+          'resolved',
+          'cancelled',
+          'canceled'
+        )
         ORDER BY
           COALESCE(
             resolved_at,
             last_seen_at,
             first_seen_at
           ) DESC
-        LIMIT 5000
       `;
 
     return rows.map(
@@ -3193,76 +3066,6 @@ function normalizeLiveStream(
    CONVEX RESOLVED MARKET NORMALIZATION
 ========================================================= */
 
-/* =========================================================
-   OPTIONAL CONVEX RESOLVED HISTORY
-
-   Some Convex deployments remove resolved markets from
-   streams:getActive immediately. If a resolved/history query
-   exists, use it. If it does not exist, silently continue and
-   rely on PostgreSQL history.
-========================================================= */
-
-function extractStreamArray(
-  payload: any
-): ConvexStream[] {
-  const candidates = [
-    payload?.value?.resolvedStreams,
-    payload?.value?.streams,
-    payload?.value?.markets,
-    payload?.value?.history,
-    payload?.resolvedStreams,
-    payload?.streams,
-    payload?.markets,
-    payload?.history,
-  ];
-
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate as ConvexStream[];
-    }
-  }
-
-  return [];
-}
-
-async function getOptionalConvexResolvedStreams(): Promise<ConvexStream[]> {
-  const paths = [
-    "streams:getResolved",
-    "streams:getResolvedMarkets",
-    "streams:getHistory",
-  ];
-
-  for (const path of paths) {
-    try {
-      const response =
-        await convexQuery(path);
-
-      const streams =
-        extractStreamArray(response);
-
-      if (streams.length) {
-        console.log(
-          "CRSHMARKET: Convex resolved history loaded:",
-          path,
-          streams.length
-        );
-
-        return streams;
-      }
-    } catch (error) {
-      console.warn(
-        "CRSHMARKET: optional Convex history query unavailable:",
-        path,
-        error instanceof Error
-          ? error.message
-          : error
-      );
-    }
-  }
-
-  return [];
-}
-
 function normalizeConvexResolvedMarket(
   stream: ConvexStream
 ) {
@@ -3274,63 +3077,82 @@ function normalizeConvexResolvedMarket(
   }
 
   const pools =
-    getPools(market);
+    getPools(
+      market
+    );
 
   const winner =
-    getWinningOptionId(market);
+    getWinningOptionId(
+      market
+    );
 
-  const resolvedAt =
+  const tradeCount =
+    getTradeCount(
+      market
+    );
+
+  const poolUsd =
+    pools
+      ? [
+          baseUnitsToUsd(
+            pools[0]
+          ),
+          baseUnitsToUsd(
+            pools[1]
+          ),
+        ]
+      : null;
+
+  /*
+   * Use the real resolved timestamp whenever
+   * Convex gives us one.
+   */
+  const resolvedNow =
     toIso(
-      market.resolvedAt ??
-      market.resolved_at ??
-      market.recordedAt ??
-      market.recorded_at ??
-      market.closedAt ??
-      market.closed_at
+      market.resolvedAt
     ) ??
     new Date().toISOString();
 
   const openedAt =
-    getOpenedAt(market);
+    getOpenedAt(
+      market
+    );
 
   const closedAt =
     getClosedAt(
       market,
-      resolvedAt
+      resolvedNow
     );
 
   const recordedAt =
     getRecordedAt(
       market,
-      resolvedAt
+      resolvedNow
     );
 
   const creditedAt =
     getCreditedAt(
       market,
-      recordedAt ?? resolvedAt
+      recordedAt ??
+        resolvedNow
     );
 
   const playback =
-    getPlayback(stream);
-
-  const poolUsd =
-    pools
-      ? [
-          baseUnitsToUsd(pools[0]),
-          baseUnitsToUsd(pools[1]),
-        ]
-      : null;
+    getPlayback(
+      stream
+    );
 
   return {
     market_id:
-      String(market.marketId),
+      String(
+        market.marketId
+      ),
 
     title:
       market.title,
 
     status:
-      market.status ?? "resolved",
+      market.status,
 
     winning_option_id:
       winner,
@@ -3342,13 +3164,15 @@ function normalizeConvexResolvedMarket(
       poolUsd,
 
     yes_pool_usd:
-      poolUsd?.[0] ?? null,
+      poolUsd?.[0] ??
+      null,
 
     no_pool_usd:
-      poolUsd?.[1] ?? null,
+      poolUsd?.[1] ??
+      null,
 
     total_trades:
-      getTradeCount(market),
+      tradeCount,
 
     stream_id:
       stream.id,
@@ -3360,10 +3184,13 @@ function normalizeConvexResolvedMarket(
       stream.hostName,
 
     viewer_count:
-      asNumber(stream.viewerCount) ?? 0,
+      asNumber(
+        stream.viewerCount
+      ) ?? 0,
 
     first_seen_at:
-      openedAt ?? undefined,
+      openedAt ??
+      undefined,
 
     opened_at:
       openedAt,
@@ -3378,10 +3205,10 @@ function normalizeConvexResolvedMarket(
       creditedAt,
 
     last_seen_at:
-      resolvedAt,
+      resolvedNow,
 
     resolved_at:
-      resolvedAt,
+      resolvedNow,
 
     expected_winnings:
       calculateExpectedWinnings(
@@ -3429,45 +3256,12 @@ export async function GET() {
         "streams:getActive"
       );
 
-    const activeSourceStreams: ConvexStream[] =
+    const sourceStreams =
       Array.isArray(
         convex?.value?.activeStreams
       )
         ? convex.value.activeStreams
         : [];
-
-    const optionalResolvedStreams =
-      await getOptionalConvexResolvedStreams();
-
-    /*
-     * Keep the UI's live list strictly live.
-     * Optional resolved streams are used for persistence/history only.
-     */
-    const sourceStreams =
-      activeSourceStreams;
-
-    const allPersistenceStreams =
-      new Map<string, ConvexStream>();
-
-    for (const stream of [
-      ...activeSourceStreams,
-      ...optionalResolvedStreams,
-    ]) {
-      const id =
-        stream?.market?.marketId;
-
-      if (id !== null && id !== undefined) {
-        allPersistenceStreams.set(
-          String(id),
-          stream
-        );
-      }
-    }
-
-    const persistenceStreams =
-      Array.from(
-        allPersistenceStreams.values()
-      );
 
     /* -----------------------------------------
        Normalize live streams
@@ -3486,7 +3280,7 @@ export async function GET() {
 
     if (sql) {
       await Promise.all(
-        persistenceStreams.map(
+        activeStreams.map(
           async (
             stream: ConvexStream
           ) => {
@@ -3523,31 +3317,8 @@ export async function GET() {
        market, merge it with DB.
     ----------------------------------------- */
 
-    const resolvedCandidates =
-      Array.from(
-        new Map(
-          [
-            ...activeSourceStreams,
-            ...optionalResolvedStreams,
-          ]
-            .filter(
-              (stream) =>
-                stream?.market?.marketId !==
-                null &&
-                stream?.market?.marketId !==
-                undefined
-            )
-            .map((stream) => [
-              String(
-                stream.market!.marketId
-              ),
-              stream,
-            ])
-        ).values()
-      );
-
     const convexResolved =
-      resolvedCandidates
+      activeStreams
         .filter(
           (
             stream: ConvexStream
@@ -3559,7 +3330,9 @@ export async function GET() {
         .map(
           normalizeConvexResolvedMarket
         )
-        .filter(Boolean);
+        .filter(
+          Boolean
+        );
 
     /* -----------------------------------------
        MERGE DB + CONVEX
@@ -3724,11 +3497,6 @@ export async function GET() {
       Array.from(
         historyMap.values()
       );
-
-    console.log(
-      "CRSHMARKET HISTORY FINAL COUNT:",
-      resolvedMarkets.length
-    );
 
     /* -----------------------------------------
        KICK VOD RESOLUTION

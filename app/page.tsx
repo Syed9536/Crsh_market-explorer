@@ -7,7 +7,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -90,7 +89,6 @@ type ApiResponse = {
 };
 
 const REFRESH_MS = 2000;
-const HISTORY_CACHE_KEY = "crsh-market-history-v1";
 
 const usdFormatter = new Intl.NumberFormat(
   "en-US",
@@ -321,13 +319,6 @@ function getResolutionProofUrl(
     return null;
   }
 
-  /*
-   * Resolution proof is the CRSHMARKET market itself.
-   * It must never fall back to the source stream/VOD.
-   *
-   * Example:
-   * https://app.crshmarket.com/market-activity?market=143%3A0x...%3A11690
-   */
   return (
     `https://app.crshmarket.com/market-activity?market=${encodeURIComponent(
       marketId
@@ -401,9 +392,6 @@ export default function HomePage() {
     null
   );
 
-  const historyCacheRef =
-    useRef<Market[]>([]);
-
   useEffect(() => {
     const saved =
       window.localStorage.getItem(
@@ -431,46 +419,6 @@ export default function HomePage() {
         : "light"
     );
   }, [darkMode]);
-
-  useEffect(() => {
-    try {
-      const saved =
-        window.localStorage.getItem(
-          HISTORY_CACHE_KEY
-        );
-
-      if (!saved) {
-        return;
-      }
-
-      const parsed =
-        JSON.parse(saved);
-
-      if (!Array.isArray(parsed)) {
-        return;
-      }
-
-      const unique =
-        new Map<string, Market>();
-
-      for (const market of parsed) {
-        if (market?.market_id) {
-          unique.set(
-            String(market.market_id),
-            market
-          );
-        }
-      }
-
-      historyCacheRef.current =
-        Array.from(unique.values());
-    } catch (error) {
-      console.warn(
-        "Could not restore market history cache:",
-        error
-      );
-    }
-  }, []);
 
   const fetchMarkets =
     useCallback(
@@ -515,81 +463,7 @@ export default function HomePage() {
             );
           }
 
-          const incomingHistory =
-            json.value?.resolvedMarkets ?? [];
-
-          const mergedHistory =
-            new Map<string, Market>();
-
-          for (const market of [
-            ...historyCacheRef.current,
-            ...incomingHistory,
-          ]) {
-            if (market?.market_id) {
-              const key =
-                String(market.market_id);
-
-              const existing =
-                mergedHistory.get(key);
-
-              mergedHistory.set(
-                key,
-                existing
-                  ? { ...existing, ...market }
-                  : market
-              );
-            }
-          }
-
-          const stableHistory =
-            Array.from(
-              mergedHistory.values()
-            ).sort((a, b) => {
-              const aTime =
-                Date.parse(
-                  a.resolved_at ??
-                    a.credited_at ??
-                    a.recorded_at ??
-                    a.last_seen_at ??
-                    ""
-                ) || 0;
-
-              const bTime =
-                Date.parse(
-                  b.resolved_at ??
-                    b.credited_at ??
-                    b.recorded_at ??
-                    b.last_seen_at ??
-                    ""
-                ) || 0;
-
-              return bTime - aTime;
-            });
-
-          historyCacheRef.current =
-            stableHistory;
-
-          try {
-            window.localStorage.setItem(
-              HISTORY_CACHE_KEY,
-              JSON.stringify(
-                stableHistory.slice(0, 5000)
-              )
-            );
-          } catch (storageError) {
-            console.warn(
-              "Could not persist market history cache:",
-              storageError
-            );
-          }
-
-          setData({
-            ...json,
-            value: {
-              ...json.value,
-              resolvedMarkets: stableHistory,
-            },
-          });
+          setData(json);
           setError(null);
           setLastUpdated(
             new Date()
