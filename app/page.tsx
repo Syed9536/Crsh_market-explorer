@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -89,6 +90,7 @@ type ApiResponse = {
 };
 
 const REFRESH_MS = 2000;
+const HISTORY_CACHE_KEY = "crsh-market-history-v1";
 
 const usdFormatter = new Intl.NumberFormat(
   "en-US",
@@ -309,20 +311,17 @@ function getStreamUrl(
 function getResolutionProofUrl(
   market: Market
 ): string | null {
-  const marketId = String(
-    market.market_id ?? ""
-  ).trim();
+  const direct =
+    market.resolution_proof_url;
 
-  if (!marketId) {
-    return null;
+  if (
+    typeof direct === "string" &&
+    direct.trim()
+  ) {
+    return direct.trim();
   }
 
-  const crshMarketKey =
-    `143:0x968279784d780c02a79b1c58ad69aaa832f09342:${marketId}`;
-
-  return `https://app.crshmarket.com/market-activity?market=${encodeURIComponent(
-    crshMarketKey
-  )}`;
+  return getStreamUrl(market);
 }
 
 function calculateLivePercentage(
@@ -391,6 +390,9 @@ export default function HomePage() {
     null
   );
 
+  const historyCacheRef =
+    useRef<Market[]>([]);
+
   useEffect(() => {
     const saved =
       window.localStorage.getItem(
@@ -418,6 +420,46 @@ export default function HomePage() {
         : "light"
     );
   }, [darkMode]);
+
+  useEffect(() => {
+    try {
+      const saved =
+        window.localStorage.getItem(
+          HISTORY_CACHE_KEY
+        );
+
+      if (!saved) {
+        return;
+      }
+
+      const parsed =
+        JSON.parse(saved);
+
+      if (!Array.isArray(parsed)) {
+        return;
+      }
+
+      const unique =
+        new Map<string, Market>();
+
+      for (const market of parsed) {
+        if (market?.market_id) {
+          unique.set(
+            String(market.market_id),
+            market
+          );
+        }
+      }
+
+      historyCacheRef.current =
+        Array.from(unique.values());
+    } catch (error) {
+      console.warn(
+        "Could not restore market history cache:",
+        error
+      );
+    }
+  }, []);
 
   const fetchMarkets =
     useCallback(
@@ -462,7 +504,81 @@ export default function HomePage() {
             );
           }
 
-          setData(json);
+          const incomingHistory =
+            json.value?.resolvedMarkets ?? [];
+
+          const mergedHistory =
+            new Map<string, Market>();
+
+          for (const market of [
+            ...historyCacheRef.current,
+            ...incomingHistory,
+          ]) {
+            if (market?.market_id) {
+              const key =
+                String(market.market_id);
+
+              const existing =
+                mergedHistory.get(key);
+
+              mergedHistory.set(
+                key,
+                existing
+                  ? { ...existing, ...market }
+                  : market
+              );
+            }
+          }
+
+          const stableHistory =
+            Array.from(
+              mergedHistory.values()
+            ).sort((a, b) => {
+              const aTime =
+                Date.parse(
+                  a.resolved_at ??
+                    a.credited_at ??
+                    a.recorded_at ??
+                    a.last_seen_at ??
+                    ""
+                ) || 0;
+
+              const bTime =
+                Date.parse(
+                  b.resolved_at ??
+                    b.credited_at ??
+                    b.recorded_at ??
+                    b.last_seen_at ??
+                    ""
+                ) || 0;
+
+              return bTime - aTime;
+            });
+
+          historyCacheRef.current =
+            stableHistory;
+
+          try {
+            window.localStorage.setItem(
+              HISTORY_CACHE_KEY,
+              JSON.stringify(
+                stableHistory.slice(0, 5000)
+              )
+            );
+          } catch (storageError) {
+            console.warn(
+              "Could not persist market history cache:",
+              storageError
+            );
+          }
+
+          setData({
+            ...json,
+            value: {
+              ...json.value,
+              resolvedMarkets: stableHistory,
+            },
+          });
           setError(null);
           setLastUpdated(
             new Date()
@@ -1874,7 +1990,7 @@ function LiveMarketCard({
             target="_blank"
             rel="noreferrer"
           >
-            WATCH LIVE STREAM ↗
+            WATCH STREAM ↗
           </a>
         </div>
       )}
@@ -2056,19 +2172,38 @@ function HistoryCard({
             {market.market_id}
           </div>
 
-          {isResolved(market.status) &&
-            getResolutionProofUrl(market) && (
+          {(getResolutionProofUrl(market) ||
+            getStreamUrl(market)) && (
             <div className="market-links">
-              <a
-                className="market-link proof-link"
-                href={getResolutionProofUrl(market) ?? "#"}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <span className="link-icon">▶</span>
-                RESOLVE PROOF
-                <span className="link-arrow">↗</span>
-              </a>
+              {getResolutionProofUrl(market) && (
+                <a
+                  className="market-link proof-link"
+                  href={
+                    getResolutionProofUrl(market) ??
+                    "#"
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  VIEW RESOLUTION PROOF ↗
+                </a>
+              )}
+
+              {getStreamUrl(market) &&
+                getStreamUrl(market) !==
+                  getResolutionProofUrl(market) && (
+                <a
+                  className="market-link"
+                  href={
+                    getStreamUrl(market) ??
+                    "#"
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  VIEW STREAM ↗
+                </a>
+              )}
             </div>
           )}
         </div>
