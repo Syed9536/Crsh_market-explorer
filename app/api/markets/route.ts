@@ -2664,6 +2664,29 @@ async function saveMarket(
       raw_data =
         EXCLUDED.raw_data
   `;
+
+  /*
+   * IMPORTANT: resolved history is copied into the permanent
+   * archive immediately. A later active snapshot can never remove it.
+   */
+  if (resolved) {
+    await archiveResolvedMarket({
+      market_id: marketId,
+      title: market.title ?? null,
+      status,
+      winning_option_id: winner,
+      current_pools_usdc: pools,
+      total_trades: incomingTrades,
+      stream_id: stream.id ?? null,
+      stream_title: stream.title ?? null,
+      host_name: stream.hostName ?? null,
+      viewer_count: asNumber(stream.viewerCount),
+      first_seen_at: openedAt,
+      last_seen_at: now,
+      resolved_at: resolvedAt,
+      raw_data: stream,
+    });
+  }
 }
 
 /* =========================================================
@@ -2935,140 +2958,310 @@ function normalizeDbMarket(
 }
 
 /* =========================================================
+   PERMANENT RESOLVED HISTORY ARCHIVE
+
+   `markets` is mutable live state. Resolved history is copied into
+   this append-only archive so a later live snapshot can never make
+   an already-resolved market disappear from history.
+========================================================= */
+
+async function ensureResolvedHistoryArchive() {
+  if (!sql) {
+    throw new Error(
+      "DATABASE_URL / POSTGRES_URL is missing. Market history cannot be loaded."
+    );
+  }
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS crsh_resolved_markets (
+      market_id TEXT NOT NULL,
+      title TEXT,
+      status TEXT,
+      winning_option_id INTEGER,
+      current_pools_usdc JSONB,
+      total_trades INTEGER,
+      stream_id TEXT,
+      stream_title TEXT,
+      host_name TEXT,
+      viewer_count INTEGER,
+      first_seen_at TIMESTAMPTZ,
+      last_seen_at TIMESTAMPTZ,
+      resolved_at TIMESTAMPTZ,
+      raw_data JSONB
+    )
+  `;
+
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS
+      crsh_resolved_markets_market_id_uidx
+    ON crsh_resolved_markets (market_id)
+  `;
+
+  /*
+   * One-time/self-healing migration:
+   * anything that is already resolved in `markets` is copied into
+   * the permanent archive. Existing archive rows are never deleted.
+   */
+  await sql`
+    INSERT INTO crsh_resolved_markets (
+      market_id,
+      title,
+      status,
+      winning_option_id,
+      current_pools_usdc,
+      total_trades,
+      stream_id,
+      stream_title,
+      host_name,
+      viewer_count,
+      first_seen_at,
+      last_seen_at,
+      resolved_at,
+      raw_data
+    )
+    SELECT
+      market_id,
+      title,
+      status,
+      winning_option_id,
+      current_pools_usdc,
+      total_trades,
+      stream_id,
+      stream_title,
+      host_name,
+      viewer_count,
+      first_seen_at,
+      last_seen_at,
+      COALESCE(
+        resolved_at,
+        last_seen_at,
+        first_seen_at,
+        NOW()
+      ),
+      raw_data
+    FROM markets
+    WHERE
+      LOWER(COALESCE(status, '')) IN (
+        'resolved',
+        'cancelled',
+        'canceled',
+        'settled',
+        'complete',
+        'completed',
+        'finalized'
+      )
+      OR resolved_at IS NOT NULL
+      OR LOWER(
+        COALESCE(
+          raw_data->'market'->>'status',
+          raw_data->>'status',
+          ''
+        )
+      ) IN (
+        'resolved',
+        'cancelled',
+        'canceled',
+        'settled',
+        'complete',
+        'completed',
+        'finalized'
+      )
+    ON CONFLICT (market_id)
+    DO UPDATE SET
+      title = COALESCE(
+        EXCLUDED.title,
+        crsh_resolved_markets.title
+      ),
+      status = COALESCE(
+        EXCLUDED.status,
+        crsh_resolved_markets.status
+      ),
+      winning_option_id = COALESCE(
+        EXCLUDED.winning_option_id,
+        crsh_resolved_markets.winning_option_id
+      ),
+      current_pools_usdc = COALESCE(
+        EXCLUDED.current_pools_usdc,
+        crsh_resolved_markets.current_pools_usdc
+      ),
+      total_trades = GREATEST(
+        COALESCE(crsh_resolved_markets.total_trades, 0),
+        COALESCE(EXCLUDED.total_trades, 0)
+      ),
+      stream_id = COALESCE(
+        EXCLUDED.stream_id,
+        crsh_resolved_markets.stream_id
+      ),
+      stream_title = COALESCE(
+        EXCLUDED.stream_title,
+        crsh_resolved_markets.stream_title
+      ),
+      host_name = COALESCE(
+        EXCLUDED.host_name,
+        crsh_resolved_markets.host_name
+      ),
+      viewer_count = COALESCE(
+        EXCLUDED.viewer_count,
+        crsh_resolved_markets.viewer_count
+      ),
+      first_seen_at = COALESCE(
+        crsh_resolved_markets.first_seen_at,
+        EXCLUDED.first_seen_at
+      ),
+      last_seen_at = COALESCE(
+        EXCLUDED.last_seen_at,
+        crsh_resolved_markets.last_seen_at
+      ),
+      resolved_at = COALESCE(
+        crsh_resolved_markets.resolved_at,
+        EXCLUDED.resolved_at
+      ),
+      raw_data = COALESCE(
+        EXCLUDED.raw_data,
+        crsh_resolved_markets.raw_data
+      )
+  `;
+}
+
+async function archiveResolvedMarket(market: any) {
+  if (!sql || !market?.market_id) {
+    return;
+  }
+
+  await sql`
+    INSERT INTO crsh_resolved_markets (
+      market_id,
+      title,
+      status,
+      winning_option_id,
+      current_pools_usdc,
+      total_trades,
+      stream_id,
+      stream_title,
+      host_name,
+      viewer_count,
+      first_seen_at,
+      last_seen_at,
+      resolved_at,
+      raw_data
+    )
+    VALUES (
+      ${String(market.market_id)},
+      ${market.title ?? null},
+      ${market.status ?? 'resolved'},
+      ${market.winning_option_id ?? null},
+      ${market.current_pools_usdc
+        ? JSON.stringify(market.current_pools_usdc)
+        : null}::jsonb,
+      ${asTradeCount(market.total_trades)},
+      ${market.stream_id ?? null},
+      ${market.stream_title ?? null},
+      ${market.host_name ?? null},
+      ${asNumber(market.viewer_count)},
+      ${market.first_seen_at ?? market.opened_at ?? null},
+      ${market.last_seen_at ?? market.resolved_at ?? null},
+      ${market.resolved_at ?? new Date().toISOString()},
+      ${JSON.stringify(market.raw_data ?? {})}::jsonb
+    )
+    ON CONFLICT (market_id)
+    DO UPDATE SET
+      title = COALESCE(
+        EXCLUDED.title,
+        crsh_resolved_markets.title
+      ),
+      status = COALESCE(
+        EXCLUDED.status,
+        crsh_resolved_markets.status
+      ),
+      winning_option_id = COALESCE(
+        EXCLUDED.winning_option_id,
+        crsh_resolved_markets.winning_option_id
+      ),
+      current_pools_usdc = COALESCE(
+        EXCLUDED.current_pools_usdc,
+        crsh_resolved_markets.current_pools_usdc
+      ),
+      total_trades = GREATEST(
+        COALESCE(crsh_resolved_markets.total_trades, 0),
+        COALESCE(EXCLUDED.total_trades, 0)
+      ),
+      stream_id = COALESCE(
+        EXCLUDED.stream_id,
+        crsh_resolved_markets.stream_id
+      ),
+      stream_title = COALESCE(
+        EXCLUDED.stream_title,
+        crsh_resolved_markets.stream_title
+      ),
+      host_name = COALESCE(
+        EXCLUDED.host_name,
+        crsh_resolved_markets.host_name
+      ),
+      viewer_count = COALESCE(
+        EXCLUDED.viewer_count,
+        crsh_resolved_markets.viewer_count
+      ),
+      first_seen_at = COALESCE(
+        crsh_resolved_markets.first_seen_at,
+        EXCLUDED.first_seen_at
+      ),
+      last_seen_at = COALESCE(
+        EXCLUDED.last_seen_at,
+        EXCLUDED.resolved_at,
+        crsh_resolved_markets.last_seen_at
+      ),
+      resolved_at = COALESCE(
+        crsh_resolved_markets.resolved_at,
+        EXCLUDED.resolved_at
+      ),
+      raw_data = COALESCE(
+        EXCLUDED.raw_data,
+        crsh_resolved_markets.raw_data
+      )
+  `;
+}
+
+/* =========================================================
    LOAD RESOLVED MARKETS
 ========================================================= */
 
 async function getResolvedMarkets() {
   if (!sql) {
-    console.error(
-      "CRSHMARKET HISTORY: Database connection missing."
+    throw new Error(
+      "DATABASE_URL / POSTGRES_URL is missing. Market history cannot be loaded."
     );
-
-    return [];
   }
 
-  try {
-    /*
-     * A resolved market is permanent history. Repair older rows
-     * if a later snapshot accidentally left the status as live.
-     */
-    await sql`
-      UPDATE markets
-      SET
-        status = 'resolved',
-        resolved_at = COALESCE(
-          resolved_at,
-          last_seen_at,
-          first_seen_at,
-          NOW()
-        )
-      WHERE
-        resolved_at IS NOT NULL
-        AND LOWER(COALESCE(status, '')) NOT IN (
-          'resolved',
-          'cancelled',
-          'canceled',
-          'settled',
-          'complete',
-          'completed',
-          'finalized'
-        )
-    `;
+  await ensureResolvedHistoryArchive();
 
-    await sql`
-      UPDATE markets
-      SET
-        status = 'resolved',
-        resolved_at = COALESCE(
-          resolved_at,
-          last_seen_at,
-          first_seen_at,
-          NOW()
-        )
-      WHERE
-        LOWER(
-          COALESCE(
-            raw_data->'market'->>'status',
-            raw_data->>'status',
-            ''
-          )
-        ) IN (
-          'resolved',
-          'cancelled',
-          'canceled',
-          'settled',
-          'complete',
-          'completed',
-          'finalized'
-        )
-    `;
+  const rows = await sql`
+    SELECT
+      market_id,
+      title,
+      status,
+      winning_option_id,
+      current_pools_usdc,
+      total_trades,
+      stream_id,
+      stream_title,
+      host_name,
+      viewer_count,
+      first_seen_at,
+      last_seen_at,
+      resolved_at,
+      raw_data
+    FROM crsh_resolved_markets
+    ORDER BY
+      COALESCE(
+        resolved_at,
+        last_seen_at,
+        first_seen_at
+      ) DESC
+  `;
 
-    const rows =
-      await sql`
-        SELECT
-          market_id,
-          title,
-          status,
-          winning_option_id,
-          current_pools_usdc,
-          total_trades,
-          stream_id,
-          stream_title,
-          host_name,
-          viewer_count,
-          first_seen_at,
-          last_seen_at,
-          resolved_at,
-          raw_data
-        FROM markets
-        WHERE
-          LOWER(
-            COALESCE(status, '')
-          ) IN (
-            'resolved',
-            'cancelled',
-            'canceled',
-            'settled',
-            'complete',
-            'completed',
-            'finalized'
-          )
-          OR resolved_at IS NOT NULL
-          OR LOWER(
-            COALESCE(
-              raw_data->'market'->>'status',
-              raw_data->>'status',
-              ''
-            )
-          ) IN (
-            'resolved',
-            'cancelled',
-            'canceled',
-            'settled',
-            'complete',
-            'completed',
-            'finalized'
-          )
-        ORDER BY
-          COALESCE(
-            resolved_at,
-            last_seen_at,
-            first_seen_at
-          ) DESC
-        LIMIT 5000
-      `;
-
-    return rows.map(
-      normalizeDbMarket
-    );
-  } catch (error) {
-    console.error(
-      "CRSHMARKET HISTORY DB LOAD FAILED:",
-      error
-    );
-
-    throw error;
-  }
+  return rows.map(
+    normalizeDbMarket
+  );
 }
 
 /* =========================================================
@@ -3435,6 +3628,14 @@ function normalizeConvexResolvedMarket(
 
 export async function GET() {
   try {
+    /*
+     * Initialize and backfill the permanent resolved-history archive
+     * before doing anything else. This is global DB state, not browser state.
+     */
+    if (sql) {
+      await ensureResolvedHistoryArchive();
+    }
+
     /*
      * Fail early in production if database
      * configuration is missing.
@@ -3811,6 +4012,29 @@ export async function GET() {
                   )}
               `;
 
+              try {
+                await sql`
+                  UPDATE crsh_resolved_markets
+                  SET raw_data =
+                    CASE
+                      WHEN raw_data IS NULL
+                      THEN ${JSON.stringify(
+                        market.raw_data ?? {}
+                      )}::jsonb
+                      ELSE raw_data
+                    END
+                  WHERE market_id =
+                    ${String(
+                      market.market_id
+                    )}
+                `;
+              } catch (archiveRawError) {
+                console.warn(
+                  "Could not persist resolved archive raw_data:",
+                  archiveRawError
+                );
+              }
+
               /*
                * Only update proof columns if those
                * columns exist in the user's schema.
@@ -3857,6 +4081,48 @@ export async function GET() {
                         market.market_id
                       )}
                   `;
+
+                  try {
+                    await sql`
+                      UPDATE crsh_resolved_markets
+                      SET
+                        raw_data =
+                          jsonb_set(
+                            jsonb_set(
+                              jsonb_set(
+                                COALESCE(
+                                  raw_data,
+                                  '{}'::jsonb
+                                ),
+                                '{_crshmarket_stream_url}',
+                                ${JSON.stringify(
+                                  streamUrl
+                                )}::jsonb,
+                                true
+                              ),
+                              '{_crshmarket_stream_embed_url}',
+                              ${JSON.stringify(
+                                embedUrl
+                              )}::jsonb,
+                              true
+                            ),
+                            '{_crshmarket_resolution_proof_url}',
+                            ${JSON.stringify(
+                              proof
+                            )}::jsonb,
+                            true
+                          )
+                      WHERE market_id =
+                        ${String(
+                          market.market_id
+                        )}
+                    `;
+                  } catch (archiveProofError) {
+                    console.warn(
+                      "Could not persist proof metadata to resolved archive:",
+                      archiveProofError
+                    );
+                  }
                 } catch (proofError) {
                   console.warn(
                     "Could not persist proof metadata:",
