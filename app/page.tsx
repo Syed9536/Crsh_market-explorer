@@ -311,17 +311,24 @@ function getStreamUrl(
 function getResolutionProofUrl(
   market: Market
 ): string | null {
-  const direct =
-    market.resolution_proof_url;
-
-  if (
-    typeof direct === "string" &&
-    direct.trim()
-  ) {
-    return direct.trim();
+  if (!market?.market_id) {
+    return null;
   }
 
-  return getStreamUrl(market);
+  const marketId = String(
+    market.market_id
+  ).trim();
+
+  if (!marketId) {
+    return null;
+  }
+
+  const crshMarketId =
+    `143:0x968279784d780c02a79b1c58ad69aaa832f09342:${marketId}`;
+
+  return `https://app.crshmarket.com/market-activity?market=${encodeURIComponent(
+    crshMarketId
+  )}`;
 }
 
 function calculateLivePercentage(
