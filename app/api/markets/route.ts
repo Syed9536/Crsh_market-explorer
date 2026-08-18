@@ -1,6 +1,3 @@
-
-
-
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 
@@ -197,6 +194,15 @@ function isResolvedStatus(
     value === "completed" ||
     value === "finalized"
   );
+}
+
+function buildExplorerKey(
+  marketId: string,
+  openedAt: string | null
+): string {
+  return `${marketId}_${
+    openedAt ?? "unknown"
+  }`;
 }
 
 function toIso(
@@ -2348,6 +2354,12 @@ async function saveMarket(
       now
     );
 
+  const explorerKey =
+    buildExplorerKey(
+      marketId,
+      openedAt
+    );
+
   const resolved =
     isResolvedStatus(
       status
@@ -2373,6 +2385,7 @@ async function saveMarket(
 
   await sql`
     INSERT INTO markets (
+      explorer_key,
       market_id,
       title,
       status,
@@ -2389,6 +2402,7 @@ async function saveMarket(
       raw_data
     )
     VALUES (
+      ${explorerKey},
       ${marketId},
       ${market.title ?? null},
       ${status},
@@ -2422,7 +2436,7 @@ async function saveMarket(
     )
 
     ON CONFLICT (
-      market_id
+      explorer_key
     )
 
     DO UPDATE SET
@@ -2725,6 +2739,14 @@ function normalizeDbMarket(
     );
 
   return {
+    explorer_key:
+      row.explorer_key ??
+      buildExplorerKey(
+        String(row.market_id),
+        row.first_seen_at ??
+          null
+      ),
+
     market_id:
       row.market_id,
 
@@ -2850,6 +2872,7 @@ async function getResolvedMarkets() {
     const rows =
       await sql`
         SELECT
+          explorer_key,
           market_id,
           title,
           status,
@@ -3146,6 +3169,12 @@ function normalizeConvexResolvedMarket(
       : null;
 
   return {
+    explorer_key:
+      buildExplorerKey(
+        String(market.marketId),
+        openedAt
+      ),
+
     market_id:
       String(market.marketId),
 
@@ -3405,7 +3434,8 @@ export async function GET() {
     ) {
       historyMap.set(
         String(
-          market.market_id
+          market.explorer_key ??
+            market.market_id
         ),
         market
       );
@@ -3425,7 +3455,8 @@ export async function GET() {
 
       const key =
         String(
-          market.market_id
+          market.explorer_key ??
+            market.market_id
         );
 
       const existing =
@@ -3583,6 +3614,12 @@ export async function GET() {
               return;
             }
 
+            const explorerKey =
+              String(
+                market.explorer_key ??
+                  market.market_id
+              );
+
             try {
               const proof =
                 market.resolution_proof_url ??
@@ -3609,10 +3646,8 @@ export async function GET() {
 
                       ELSE raw_data
                     END
-                WHERE market_id =
-                  ${String(
-                    market.market_id
-                  )}
+                WHERE explorer_key =
+                  ${explorerKey}
               `;
 
               /*
@@ -3656,10 +3691,8 @@ export async function GET() {
                           )}::jsonb,
                           true
                         )
-                    WHERE market_id =
-                      ${String(
-                        market.market_id
-                      )}
+                    WHERE explorer_key =
+                      ${explorerKey}
                   `;
                 } catch (proofError) {
                   console.warn(
