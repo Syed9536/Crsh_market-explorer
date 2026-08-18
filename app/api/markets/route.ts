@@ -3373,28 +3373,21 @@ for (const stream of [
        market, merge it with DB.
     ----------------------------------------- */
 
-    const resolvedCandidates =
-      Array.from(
-        new Map(
-          [
-            ...activeSourceStreams,
-            ...optionalResolvedStreams,
-          ]
-            .filter(
-              (stream) =>
-                stream?.market?.marketId !==
-                null &&
-                stream?.market?.marketId !==
-                undefined
-            )
-            .map((stream) => [
-              String(
-                stream.market!.marketId
-              ),
-              stream,
-            ])
-        ).values()
-      );
+    const resolvedCandidates = Array.from(
+  new Map(
+    [...activeSourceStreams, ...optionalResolvedStreams]
+      .filter(
+        (stream) =>
+          stream?.market?.marketId !== null &&
+          stream?.market?.marketId !== undefined
+      )
+      .map((stream) => {
+        const openedAt = getOpenedAt(stream.market!);
+        const uniqueKey = buildExplorerKey(String(stream.market!.marketId), openedAt);
+        return [uniqueKey, stream]; // ✅ FIX: Unique composite key
+      })
+  ).values()
+);
 
     const convexResolved =
       resolvedCandidates
