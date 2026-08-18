@@ -3301,23 +3301,18 @@ export async function GET() {
     const sourceStreams =
       activeSourceStreams;
 
-    const allPersistenceStreams =
-      new Map<string, ConvexStream>();
-
-    for (const stream of [
-      ...activeSourceStreams,
-      ...optionalResolvedStreams,
-    ]) {
-      const id =
-        stream?.market?.marketId;
-
-      if (id !== null && id !== undefined) {
-        allPersistenceStreams.set(
-          String(id),
-          stream
-        );
-      }
-    }
+    const allPersistenceStreams = new Map<string, ConvexStream>();
+for (const stream of [
+  ...activeSourceStreams,
+  ...optionalResolvedStreams,
+]) {
+  const id = stream?.market?.marketId;
+  if (id !== null && id !== undefined) {
+    const openedAt = getOpenedAt(stream.market!);
+    const uniqueKey = buildExplorerKey(String(id), openedAt);
+    allPersistenceStreams.set(uniqueKey, stream); // ✅ FIX: Unique composite key
+  }
+}
 
     const persistenceStreams =
       Array.from(
