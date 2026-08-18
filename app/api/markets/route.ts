@@ -3040,8 +3040,16 @@ function normalizeConvexResolvedMarket(
    MAIN API
 ========================================================= */
 
-export async function GET() {
-  let canSyncDB = false; // 🚀 Scope issue permanently fixed here!
+/* =========================================================
+   MAIN API
+========================================================= */
+
+export async function GET(request: Request) {
+  // 🚀 CRON FIX: URL check karega ki request cron-job se aayi hai ya website se
+  const { searchParams } = new URL(request.url);
+  const isCron = searchParams.get("cron") === "1";
+
+  let canSyncDB = false;
 
   try {
     /*
@@ -3434,11 +3442,18 @@ export async function GET() {
        Final response
     ----------------------------------------- */
 
+    // 🚀 CRON FIX: Agar cron-job ne bulaya hai, toh data mat bhejo, sirf chhota sa success message bhejo.
+    if (isCron) {
+      return NextResponse.json(
+        { status: "success", message: "Background sync complete. No data sent to save bandwidth." },
+        { headers: { "Cache-Control": "no-store", Pragma: "no-cache", Expires: "0" } }
+      );
+    }
+
+    // Agar frontend website ne bulaya hai, toh poora data bhejo
     return NextResponse.json(
       {
-        status:
-          "success",
-
+        status: "success",
         value: {
           activeStreams,
           resolvedMarkets,
