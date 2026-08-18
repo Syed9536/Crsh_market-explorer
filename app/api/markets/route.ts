@@ -508,82 +508,38 @@ function getTradeCount(market?: any): number {
    EXPECTED WINNINGS
 ========================================================= */
 
-function calculateExpectedWinnings(
-  pools: any,
-  winningOptionId: any
-): number | null {
-  if (
-    !Array.isArray(pools) ||
-    pools.length < 2
-  ) {
-    return null;
+function calculateExpectedWinnings(pools: any, winningOptionId: any): number | null {
+  if (!Array.isArray(pools) || pools.length < 2) return null;
+
+  const winner = normalizeWinner(winningOptionId);
+  if (winner !== 0 && winner !== 1) return null;
+
+  const yesRaw = normalizePoolRaw(pools[0]);
+  const noRaw = normalizePoolRaw(pools[1]);
+  if (yesRaw <= 0 || noRaw <= 0) return null;
+
+  const total = yesRaw + noRaw;
+  const winningPool = winner === 0 ? yesRaw : noRaw;
+  if (total <= 0 || winningPool <= 0) return null;
+
+  const BET_AMOUNT = 10;
+  const BET_BASE = BET_AMOUNT * USDC_BASE; 
+
+  const newTotal = total + BET_BASE;
+  const newWinningPool = winningPool + BET_BASE;
+
+  let rawPayout = BET_AMOUNT * (newTotal / newWinningPool);
+  
+  let profit = rawPayout - BET_AMOUNT;
+  if (profit > 0) {
+    profit = profit * 0.87; 
   }
 
-  const winner =
-    normalizeWinner(
-      winningOptionId
-    );
+  const payout = BET_AMOUNT + profit;
 
-  if (
-    winner !== 0 &&
-    winner !== 1
-  ) {
-    return null;
-  }
-
-  const yesRaw =
-    normalizePoolRaw(
-      pools[0]
-    );
-
-  const noRaw =
-    normalizePoolRaw(
-      pools[1]
-    );
-
-  /*
-   * Don't show a fake $0.00 when one side
-   * is unavailable.
-   */
-  if (
-    yesRaw <= 0 ||
-    noRaw <= 0
-  ) {
-    return null;
-  }
-
-  const total =
-    yesRaw + noRaw;
-
-  const winningPool =
-    winner === 0
-      ? yesRaw
-      : noRaw;
-
-  if (
-    total <= 0 ||
-    winningPool <= 0
-  ) {
-    return null;
-  }
-
-  const payout =
-    HYPOTHETICAL_BET *
-    (total / winningPool);
-
-  if (
-    !Number.isFinite(
-      payout
-    )
-  ) {
-    return null;
-  }
-
-  return Number(
-    payout.toFixed(2)
-  );
+  if (!Number.isFinite(payout)) return null;
+  return Number(payout.toFixed(2));
 }
-
 /* =========================================================
    TIMESTAMPS
 ========================================================= */
