@@ -1363,9 +1363,8 @@ function buildResolutionProofUrl(
     return specificRecordingUrl;
   }
 
-  if (!originalUrl) {
-    return null;
-  }
+  return null;
+}
 
   if (
     isKickChannelUrl(
