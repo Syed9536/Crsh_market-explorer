@@ -3049,6 +3049,8 @@ function normalizeConvexResolvedMarket(
 ========================================================= */
 
 export async function GET() {
+  let canSyncDB = false; // 🚀 Scope issue permanently fixed here!
+
   try {
     /*
      * Fail early in production if database
@@ -3119,25 +3121,29 @@ export async function GET() {
     ----------------------------------------- */
 
     if (sql) {
-      await Promise.all(
-        persistenceStreams.map(
-          async (
-            stream: ConvexStream
-          ) => {
-            try {
-              await saveMarket(
-                stream
-              );
-            } catch (error) {
-              console.error(
-                "Market save failed:",
-                stream.market?.marketId,
-                error
-              );
+      canSyncDB = Boolean(await kv.set("crsh_db_sync_lock", "locked", { nx: true, ex: 2 }));
+
+      if (canSyncDB) {
+        await Promise.all(
+          persistenceStreams.map(
+            async (
+              stream: ConvexStream
+            ) => {
+              try {
+                await saveMarket(
+                  stream
+                );
+              } catch (error) {
+                console.error(
+                  "Market save failed:",
+                  stream.market?.marketId,
+                  error
+                );
+              }
             }
-          }
-        )
-      );
+          )
+        );
+      }
     }
 
     /* -----------------------------------------
