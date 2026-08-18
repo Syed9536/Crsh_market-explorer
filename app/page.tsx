@@ -1598,6 +1598,17 @@ const activeStreams = (data?.value?.activeStreams ?? []).filter(
         /* ⬆️ NAYA ANIMATION CODE ⬆️ */
 
 /* ⬇️ DISPUTE FORM CSS ⬇️ */
+        .dispute-warning {
+          font-size: 9px;
+          color: var(--red);
+          background: rgba(255, 64, 81, 0.05);
+          padding: 8px;
+          border-radius: 6px;
+          margin-bottom: 12px;
+          border-left: 2px solid var(--red);
+          letter-spacing: 0.2px;
+        }
+
         .dispute-btn {
           margin-top: 18px;
           width: 100%;
@@ -1613,6 +1624,8 @@ const activeStreams = (data?.value?.activeStreams ?? []).filter(
           text-transform: uppercase;
           letter-spacing: 0.5px;
         }
+        
+        /* Baaki saari dispute classes iske niche waise ki waisi rahengi */
 
         .dispute-btn:hover {
           background: rgba(255, 64, 81, 0.15);
