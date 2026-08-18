@@ -253,9 +253,24 @@ function getResolutionProofUrl(market: Market): string | null {
     return null;
   }
 
+  // CRSH Composite ID Logic: ChainID:ContractAddress:MarketID
+  // Try to extract from raw_data if available in the future, otherwise fallback to known constants.
+  const chainId = 
+    market.raw_data?.market?.chainId ?? 
+    market.raw_data?.chainId ?? 
+    "143";
+    
+  const contractAddress = 
+    market.raw_data?.market?.contractAddress ?? 
+    market.raw_data?.contractAddress ?? 
+    "0x8964d7c989bf4b9bbd179ecd205544d3bb5b10f8";
+
+  // Create the exact format CRSH uses
+  const compositeId = `${chainId}:${contractAddress}:${marketId}`;
+
   return `https://app.crshmarket.com/market-activity?market=${encodeURIComponent(
-    marketId
-  )}`;
+    compositeId
+  )}&panel=trade`;
 }
 
 function calculateLivePercentage(yes: number, no: number) {
