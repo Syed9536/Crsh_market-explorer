@@ -284,105 +284,55 @@ function normalizePoolRaw(
    POOLS
 ========================================================= */
 
-function getPools(
-  market?: ConvexMarket | null
-): [string, string] | null {
-  if (!market) {
-    return null;
-  }
+function getPools(market?: any): [string, string] | null {
+  if (!market) return null;
+  let bestYes = 0;
+  let bestNo = 0;
+  let maxTotal = 0;
 
-  const resolved =
-    isResolvedStatus(
-      market.status
+  const checkPools = (yesVal: any, noVal: any) => {
+    const y = normalizePoolRaw(yesVal);
+    const n = normalizePoolRaw(noVal);
+    if (y > 0 || n > 0) {
+      if (y + n > maxTotal) {
+        maxTotal = y + n;
+        bestYes = y;
+        bestNo = n;
+      }
+    }
+  };
+
+  const search = (o: any, depth: number) => {
+    if (depth > 5 || !o || typeof o !== "object") return;
+
+    const arrKeys = ["finalPoolsUsdc", "finalPools", "currentPoolsUsdc", "currentPools", "pools", "pool", "poolUsdc"];
+    for (const k of arrKeys) {
+      let val = o[k];
+      if (typeof val === "string") val = parseJson(val);
+      if (Array.isArray(val) && val.length >= 2) {
+        checkPools(val[0], val[1]);
+      } else if (val && typeof val === "object" && !Array.isArray(val)) {
+        checkPools(val.yes ?? val.YES ?? val[0], val.no ?? val.NO ?? val[1]);
+      }
+    }
+
+    checkPools(
+      o.yesPoolUsdc ?? o.yesPool ?? o.currentYesPool ?? o.yes_pool ?? o.yesPoolAmount ?? o.yes,
+      o.noPoolUsdc ?? o.noPool ?? o.currentNoPool ?? o.no_pool ?? o.noPoolAmount ?? o.no
     );
 
-  const candidates =
-    resolved
-      ? [
-          market.finalPoolsUsdc,
-          market.finalPools,
-          market.currentPoolsUsdc,
-          market.currentPools,
-        ]
-      : [
-          market.currentPoolsUsdc,
-          market.currentPools,
-          market.finalPoolsUsdc,
-          market.finalPools,
-        ];
-
-  for (
-    const candidateRaw of candidates
-  ) {
-    const candidate =
-      parseJson(candidateRaw);
-
-    if (
-      Array.isArray(candidate) &&
-      candidate.length >= 2
-    ) {
-      const yes =
-        normalizePoolRaw(
-          candidate[0]
-        );
-
-      const no =
-        normalizePoolRaw(
-          candidate[1]
-        );
-
-      if (
-        yes > 0 ||
-        no > 0
-      ) {
-        return [
-          String(yes),
-          String(no),
-        ];
-      }
+    for (const key of Object.keys(o)) {
+      search(o[key], depth + 1);
     }
+  };
 
-    if (
-      candidate &&
-      typeof candidate === "object" &&
-      !Array.isArray(candidate)
-    ) {
-      const yes =
-        candidate.yes ??
-        candidate.YES ??
-        candidate[0];
+  search(market, 0);
 
-      const no =
-        candidate.no ??
-        candidate.NO ??
-        candidate[1];
-
-      if (
-        yes !== undefined &&
-        no !== undefined
-      ) {
-        const yesRaw =
-          normalizePoolRaw(yes);
-
-        const noRaw =
-          normalizePoolRaw(no);
-
-        if (
-          yesRaw > 0 ||
-          noRaw > 0
-        ) {
-          return [
-            String(yesRaw),
-            String(noRaw),
-          ];
-        }
-      }
-    }
+  if (maxTotal > 0) {
+    return [String(bestYes), String(bestNo)];
   }
-
   return null;
 }
-
 /* =========================================================
    WINNER
 ========================================================= */
