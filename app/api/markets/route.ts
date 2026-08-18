@@ -473,109 +473,34 @@ function getWinningOptionId(
    TRADES
 ========================================================= */
 
-function getTradeCount(
-  market?: ConvexMarket | null
-): number {
-  if (!market) {
-    return 0;
-  }
-
-  const sources: any[] = [
-    market,
-    market.stats,
-    market.statistics,
-    market.metrics,
-    market.marketStats,
-    market.rawData,
-    market.rawData?.market,
-  ];
-
-  const numericKeys = [
-    "totalTrades",
-    "totalTradeCount",
-    "totalTradesCount",
-    "tradeCount",
-    "tradesCount",
-    "numberOfTrades",
-    "numTrades",
-    "total_bets",
-    "totalBets",
-    "betCount",
-    "betsCount",
-  ];
-
+function getTradeCount(market?: any): number {
+  if (!market) return 0;
   let best = 0;
 
-  for (
-    const source of sources
-  ) {
-    if (
-      !source ||
-      typeof source !== "object"
-    ) {
-      continue;
+  const search = (o: any, depth: number) => {
+    if (depth > 5 || !o || typeof o !== "object") return;
+
+    const numKeys = ["totalTrades", "totalTradeCount", "totalTradesCount", "tradeCount", "tradesCount", "numberOfTrades", "numTrades", "total_bets", "totalBets", "betCount", "betsCount"];
+    for (const k of numKeys) {
+      const count = asTradeCount(o[k]);
+      if (count > best) best = count;
     }
 
-    for (
-      const key of numericKeys
-    ) {
-      const count =
-        asTradeCount(
-          source[key]
-        );
-
-      if (
-        count > best
-      ) {
-        best = count;
+    const arrKeys = ["recentTradeProfiles", "recentTrades", "trades", "tradeHistory", "bets", "transactions"];
+    for (const k of arrKeys) {
+      let val = o[k];
+      if (typeof val === "string") val = parseJson(val);
+      if (Array.isArray(val) && val.length > best) {
+        best = val.length;
       }
     }
-  }
 
-  const arrays = [
-    market.recentTradeProfiles,
-    market.recentTrades,
-    market.trades,
-    market.tradeHistory,
-    market.bets,
-    market.transactions,
-
-    market.stats?.trades,
-    market.statistics?.trades,
-    market.metrics?.trades,
-    market.marketStats?.trades,
-
-    market.rawData
-      ?.recentTradeProfiles,
-
-    market.rawData
-      ?.recentTrades,
-
-    market.rawData?.trades,
-
-    market.rawData
-      ?.tradeHistory,
-
-    market.rawData?.bets,
-  ];
-
-  for (
-    const value of arrays
-  ) {
-    const parsed =
-      parseJson(value);
-
-    if (
-      Array.isArray(parsed)
-    ) {
-      best =
-        Math.max(
-          best,
-          parsed.length
-        );
+    for (const key of Object.keys(o)) {
+      search(o[key], depth + 1);
     }
-  }
+  };
 
+  search(market, 0);
   return best;
 }
 
