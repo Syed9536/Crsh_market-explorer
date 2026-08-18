@@ -658,60 +658,28 @@ function getClosedAt(
    CONVEX
 ========================================================= */
 
-async function convexQuery(
-  path: string,
-  args: Record<string, any> = {}
-) {
-  const response =
-    await fetch(
-      CONVEX_URL,
-      {
-        method: "POST",
+/* =========================================================
+   CONVEX
+========================================================= */
 
-        headers: {
-          "content-type":
-            "application/json",
-        },
+async function convexQuery(path: string, args: Record<string, any> = {}) {
+  const response = await fetch(CONVEX_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, args, format: "json" }),
+    cache: "no-store",
+    next: { revalidate: 0 } // 🚀 FIX 2: This absolutely forces Next.js to skip its internal Data Cache
+  });
 
-        body: JSON.stringify({
-          path,
-          args,
-          format: "json",
-        }),
-
-        cache: "no-store",
-      }
-    );
-
-  const data =
-    await response
-      .json()
-      .catch(() => null);
+  const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const detail =
-      data?.error ??
-      data?.message ??
-      `HTTP ${response.status}`;
-
-    throw new Error(
-      `Convex returned ${response.status}: ${String(
-        detail
-      )}`
-    );
+    const detail = data?.error ?? data?.message ?? `HTTP ${response.status}`;
+    throw new Error(`Convex returned ${response.status}: ${String(detail)}`);
   }
 
-  if (
-    data?.status &&
-    data.status !== "success"
-  ) {
-    throw new Error(
-      data?.error
-        ? `Convex query failed: ${String(
-            data.error
-          )}`
-        : "Convex query failed"
-    );
+  if (data?.status && data.status !== "success") {
+    throw new Error(data?.error ? `Convex query failed: ${String(data.error)}` : "Convex query failed");
   }
 
   return data;
@@ -2844,23 +2812,34 @@ function normalizeLiveStream(
    rely on PostgreSQL history.
 ========================================================= */
 
-function extractStreamArray(
-  payload: any
-): ConvexStream[] {
+/* =========================================================
+   CONVEX RESOLVED MARKET NORMALIZATION
+========================================================= */
+
+function extractStreamArray(payload: any): ConvexStream[] {
+  if (!payload) return [];
+  
+  // 🚀 Added "recentResolutions" to instantly catch fast CRSH updates
   const candidates = [
+    payload?.value?.recentResolutions,
     payload?.value?.resolvedStreams,
     payload?.value?.streams,
     payload?.value?.markets,
     payload?.value?.history,
+    payload?.value,
+    payload?.recentResolutions,
     payload?.resolvedStreams,
     payload?.streams,
     payload?.markets,
     payload?.history,
+    payload
   ];
 
   for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate as ConvexStream[];
+    if (Array.isArray(candidate) && candidate.length > 0) {
+      if (candidate[0]?.market || candidate[0]?.marketId || candidate[0]?.id) {
+        return candidate as ConvexStream[];
+      }
     }
   }
 
@@ -2868,43 +2847,44 @@ function extractStreamArray(
 }
 
 async function getOptionalConvexResolvedStreams(): Promise<ConvexStream[]> {
-  const paths = [
+  let knownPath = "";
+  if (hasKV) {
+    try { knownPath = (await kv.get<string>("crsh_working_history_path")) || ""; } catch (e) {}
+  }
+
+  // 🚀 Smarter endpoints list prioritized by CRSH UI patterns
+  const paths = knownPath ? [knownPath] : [
+    "streams:getRecentResolutions",
+    "markets:getRecentResolutions",
+    "streams:getResolvedStreams",
     "streams:getResolved",
-    "streams:getResolvedMarkets",
+    "markets:getResolvedMarkets",
+    "markets:getResolved",
+    "resolutions:getRecent",
+    "public:getRecentResolutions",
     "streams:getHistory",
+    "markets:getHistory"
   ];
 
   for (const path of paths) {
     try {
-      const response =
-        await convexQuery(path);
+      const response = await convexQuery(path);
+      const streams = extractStreamArray(response);
 
-      const streams =
-        extractStreamArray(response);
-
-      if (streams.length) {
-        console.log(
-          "CRSHMARKET: Convex resolved history loaded:",
-          path,
-          streams.length
-        );
-
+      if (streams.length > 0) {
+        // Cache the correct path to speed up future 2-second polls
+        if (hasKV && path !== knownPath) {
+          try { await kv.set("crsh_working_history_path", path, { ex: 86400 }); } catch (e) {}
+        }
         return streams;
       }
     } catch (error) {
-      console.warn(
-        "CRSHMARKET: optional Convex history query unavailable:",
-        path,
-        error instanceof Error
-          ? error.message
-          : error
-      );
+      // Silently ignore invalid paths and keep searching
     }
   }
 
   return [];
 }
-
 function normalizeConvexResolvedMarket(
   stream: ConvexStream
 ) {

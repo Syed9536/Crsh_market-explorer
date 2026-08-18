@@ -306,6 +306,8 @@ export default function HomePage() {
 
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  
+
   /*
    * IMPORTANT:
    *
@@ -342,7 +344,16 @@ export default function HomePage() {
        * It must not run during component render.
        */
       const requestId = ++refreshRequestRef.current;
-
+// 🚀 FIX 1: Bypassing browser cache completely with a live timestamp
+        const response = await fetch(`/api/markets?t=${Date.now()}`, {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
+          },
+        });
       try {
         if (initial) {
           setLoading(true);
