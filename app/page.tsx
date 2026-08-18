@@ -1899,7 +1899,7 @@ function HistoryCard({
     if (!disputeTime.trim() || !disputeUrlParam.trim() || disputeReason.trim().length < 15) {
       setDisputeMessage({ 
         type: 'error', 
-        text: "Please provide a valid Timestamp, Kick VOD Link, and at least a 15-character reason." 
+        text: "Please provide a valid Timestamp, Kick,Yt Stream Link, and at least a 15-character reason." 
       });
       return;
     }
