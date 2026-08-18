@@ -3132,28 +3132,34 @@ export async function GET() {
        This is what makes history persistent.
     ----------------------------------------- */
 
+    /* -----------------------------------------
+       SAVE EVERY CURRENT SNAPSHOT
+    ----------------------------------------- */
+
     if (sql) {
       if (hasKV) {
         try {
-          canSyncDB = Boolean(await kv.set("crsh_db_sync_lock", "locked", { nx: true, ex: 2 }));
+          canSyncDB = Boolean(await kv.set("crsh_db_sync_lock", "locked", { nx: true, ex: 3 }));
         } catch (e) {
-          canSyncDB = true; // Fallback if KV fails
+          canSyncDB = true; 
         }
       } else {
-        canSyncDB = true; // Fallback if no KV
+        canSyncDB = true;
       }
 
-      if (canSyncDB) {
-        await Promise.all(
-          persistenceStreams.map(async (stream: ConvexStream) => {
-            try {
+      await Promise.all(
+        persistenceStreams.map(async (stream: ConvexStream) => {
+          try {
+            // 🚀 FIX 1: Resolved markets bypass the lock and save instantly to prevent disappearing!
+            const isResolved = isResolvedStatus(stream.market?.status);
+            if (isResolved || canSyncDB) {
               await saveMarket(stream);
-            } catch (error) {
-              console.error("Market save failed:", stream.market?.marketId, error);
             }
-          })
-        );
-      }
+          } catch (error) {
+            console.error("Market save failed:", stream.market?.marketId, error);
+          }
+        })
+      );
     }
 
     /* -----------------------------------------
@@ -3390,152 +3396,60 @@ export async function GET() {
        instead of only existing in memory.
     ----------------------------------------- */
 
+    /* -----------------------------------------
+       Persist any proof updates
+    ----------------------------------------- */
+
     if (sql && canSyncDB) {
       await Promise.all(
-        resolvedMarkets.map(
-          async (
-            market
-          ) => {
-            if (
-              !market?.market_id
-            ) {
-              return;
-            }
+        resolvedMarkets.map(async (market) => {
+          if (!market?.market_id) {
+            return;
+          }
 
-            const explorerKey =
-              String(
-                market.explorer_key ??
-                  market.market_id
-              );
+          const explorerKey = String(market.explorer_key ?? market.market_id);
 
-            try {
-              const proof =
-                market.resolution_proof_url ??
-                null;
+          try {
+            const proof = market.resolution_proof_url ?? null;
+            const streamUrl = market.stream_url ?? null;
+            const embedUrl = market.stream_embed_url ?? null;
 
-              const streamUrl =
-                market.stream_url ??
-                null;
+            // 🚀 FIX 2: Check if URLs actually changed before spamming 500 UPDATE queries to DB
+            const raw = market.raw_data ?? {};
+            const existingProof = raw._crshmarket_resolution_proof_url ?? null;
+            const existingStream = raw._crshmarket_stream_url ?? null;
+            const existingEmbed = raw._crshmarket_stream_embed_url ?? null;
 
-              const embedUrl =
-                market.stream_embed_url ??
-                null;
-
+            if (proof !== existingProof || streamUrl !== existingStream || embedUrl !== existingEmbed) {
               await sql`
                 UPDATE markets
                 SET
                   raw_data =
-                    CASE
-                      WHEN raw_data IS NULL
-                      THEN ${JSON.stringify(
-                        market.raw_data ??
-                          {}
-                      )}::jsonb
-
-                      ELSE raw_data
-                    END
-                WHERE explorer_key =
-                  ${explorerKey}
-              `;
-
-              /*
-               * Only update proof columns if those
-               * columns exist in the user's schema.
-               *
-               * The main raw_data remains untouched.
-               */
-              if (
-                proof ||
-                streamUrl ||
-                embedUrl
-              ) {
-                try {
-                  await sql`
-                    UPDATE markets
-                    SET
-                      raw_data =
+                    jsonb_set(
+                      jsonb_set(
                         jsonb_set(
-                          jsonb_set(
-                            jsonb_set(
-                              COALESCE(
-                                raw_data,
-                                '{}'::jsonb
-                              ),
-                              '{_crshmarket_stream_url}',
-                              ${JSON.stringify(
-                                streamUrl
-                              )}::jsonb,
-                              true
-                            ),
-                            '{_crshmarket_stream_embed_url}',
-                            ${JSON.stringify(
-                              embedUrl
-                            )}::jsonb,
-                            true
-                          ),
-                          '{_crshmarket_resolution_proof_url}',
-                          ${JSON.stringify(
-                            proof
-                          )}::jsonb,
+                          COALESCE(raw_data, '{}'::jsonb),
+                          '{_crshmarket_stream_url}',
+                          ${JSON.stringify(streamUrl)}::jsonb,
                           true
-                        )
-                    WHERE explorer_key =
-                      ${explorerKey}
-                  `;
-                } catch (proofError) {
-                  console.warn(
-                    "Could not persist proof metadata:",
-                    proofError
-                  );
-                }
-              }
-            } catch (error) {
-              console.warn(
-                "Resolved market persistence update failed:",
-                market.market_id,
-                error
-              );
+                        ),
+                        '{_crshmarket_stream_embed_url}',
+                        ${JSON.stringify(embedUrl)}::jsonb,
+                        true
+                      ),
+                      '{_crshmarket_resolution_proof_url}',
+                      ${JSON.stringify(proof)}::jsonb,
+                      true
+                    )
+                WHERE explorer_key = ${explorerKey}
+              `;
             }
+          } catch (error) {
+            console.warn("Resolved market persistence update failed:", market.market_id, error);
           }
-        )
+        })
       );
     }
-
-    /* -----------------------------------------
-       Sort history newest first
-    ----------------------------------------- */
-
-    resolvedMarkets =
-      resolvedMarkets.sort(
-        (
-          a,
-          b
-        ) => {
-          const aTime =
-            Date.parse(
-              a.resolved_at ??
-                a.credited_at ??
-                a.recorded_at ??
-                a.last_seen_at ??
-                ""
-            ) || 0;
-
-          const bTime =
-            Date.parse(
-              b.resolved_at ??
-                b.credited_at ??
-                b.recorded_at ??
-                b.last_seen_at ??
-                ""
-            ) || 0;
-
-          return (
-            bTime -
-            aTime
-          );
-        }
-      );
-
     /* -----------------------------------------
        Final response
     ----------------------------------------- */
