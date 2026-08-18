@@ -1877,11 +1877,17 @@ function HistoryCard({
   const [isDisputing, setIsDisputing] = useState(false);
   const [disputeWinner, setDisputeWinner] = useState("YES");
   const [disputeTime, setDisputeTime] = useState("");
+  const [disputeUrlParam, setDisputeUrlParam] = useState("");
+  const [disputeReason, setDisputeReason] = useState("");
   const [disputeMessage, setDisputeMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   const submitDispute = async () => {
-    if (!disputeTime.trim()) {
-      setDisputeMessage({ type: 'error', text: "Please enter stream timestamp! (e.g. 01:24:30)" });
+    // 🚨 STRICT VALIDATION (Spam rokne ke liye)
+    if (!disputeTime.trim() || !disputeUrlParam.trim() || disputeReason.trim().length < 15) {
+      setDisputeMessage({ 
+        type: 'error', 
+        text: "Please provide a valid Timestamp, Kick VOD Link, and at least a 15-character reason." 
+      });
       return;
     }
     
@@ -1896,19 +1902,21 @@ function HistoryCard({
           market_id: String(market.market_id),
           reported_winner: disputeWinner,
           video_timestamp: disputeTime.trim(),
+          evidence_url: disputeUrlParam.trim(),
+          reason: disputeReason.trim()
         }),
       });
       
-      const data = await res.json();
+      const data = await res.json().catch(() => null); // Catch HTML error pages
       
       if (res.ok) {
-        setDisputeMessage({ type: 'success', text: "Report submitted! Community will verify." });
-        setTimeout(() => setShowDispute(false), 4000); // 4 seconds baad form close
+        setDisputeMessage({ type: 'success', text: "Evidence submitted securely. The community verification is in progress." });
+        setTimeout(() => setShowDispute(false), 4000); 
       } else {
-        setDisputeMessage({ type: 'error', text: data.error || "Failed to submit." });
+        setDisputeMessage({ type: 'error', text: data?.error || `Server Error: ${res.status}. Check if API route exists.` });
       }
     } catch (err) {
-      setDisputeMessage({ type: 'error', text: "Network error occurred." });
+      setDisputeMessage({ type: 'error', text: "Network connection failed. API route might be missing." });
     } finally {
       setIsDisputing(false);
     }
@@ -2016,6 +2024,10 @@ function HistoryCard({
 
           {showDispute && (
             <div className="dispute-form">
+              <div className="dispute-warning">
+                Fake or spam reports will result in a permanent ban from using the explorer. Please provide exact evidence.
+              </div>
+              
               <label>Correct Winner Should Be:</label>
               <select 
                 value={disputeWinner} 
@@ -2025,7 +2037,7 @@ function HistoryCard({
                 <option value="NO">NO</option>
               </select>
 
-              <label>Exact Stream Timestamp of Evidence (e.g., 01:25:40):</label>
+              <label>Exact Timestamp in the provided video (e.g., 01:25:40):</label>
               <input 
                 type="text" 
                 placeholder="00:00:00" 
@@ -2033,12 +2045,28 @@ function HistoryCard({
                 onChange={(e) => setDisputeTime(e.target.value)}
               />
 
+              <label>Evidence Link (Kick, YouTube, X, Twitch, etc.):</label>
+              <input 
+                type="url" 
+                placeholder="https://..." 
+                value={disputeUrlParam} 
+                onChange={(e) => setDisputeUrlParam(e.target.value)}
+              />
+
+              <label>Brief Reason (Min 15 chars):</label>
+              <input 
+                type="text" 
+                placeholder="Host settled NO, but 4th goal happened here." 
+                value={disputeReason} 
+                onChange={(e) => setDisputeReason(e.target.value)}
+              />
+
               <button 
                 className="dispute-submit" 
                 onClick={submitDispute} 
                 disabled={isDisputing}
               >
-                {isDisputing ? "Submitting..." : "Submit Proof"}
+                {isDisputing ? "Verifying Evidence..." : "Submit Proof"}
               </button>
 
               {disputeMessage && (
