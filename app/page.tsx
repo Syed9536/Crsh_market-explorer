@@ -1553,6 +1553,50 @@ const activeStreams = (data?.value?.activeStreams ?? []).filter(
             grid-template-columns: 1fr;
           }
         }
+
+        /* ⬇️ NAYA ANIMATION CODE ⬇️ */
+        .ending-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .ending-time {
+          font-size: 11px;
+          font-weight: 800;
+          color: var(--text);
+          font-variant-numeric: tabular-nums;
+        }
+
+        .locked-text {
+          color: var(--muted) !important;
+        }
+
+        .progress-bg {
+          background: #1c1d25;
+        }
+
+        .pulse-text {
+          color: var(--red);
+          animation: text-pulse 1s ease-in-out infinite;
+        }
+
+        .warning-glow {
+          box-shadow: 0 0 12px var(--red);
+          animation: bar-pulse 0.5s alternate infinite;
+        }
+
+        @keyframes text-pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(1.05); }
+        }
+
+        @keyframes bar-pulse {
+          from { filter: brightness(1); }
+          to { filter: brightness(1.4); }
+        }
+        /* ⬆️ NAYA ANIMATION CODE ⬆️ */
+
       `}</style>
     </main>
   );
