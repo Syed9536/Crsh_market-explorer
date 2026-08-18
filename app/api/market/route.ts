@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
-import { kv } from "@vercel/kv";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -2696,36 +2695,87 @@ function normalizeDbMarket(
 
 async function getResolvedMarkets() {
   if (!sql) {
-    console.error("CRSHMARKET HISTORY: Database connection missing.");
+    console.error(
+      "CRSHMARKET HISTORY: Database connection missing."
+    );
+
     return [];
   }
 
   try {
-    // 🚀 HIGH-SPEED READ CACHE: Check Vercel KV First
-    const cachedHistory = await kv.get("crsh_history_cache");
-    if (cachedHistory && Array.isArray(cachedHistory)) {
-      return cachedHistory;
-    }
+    const rows =
+      await sql`
+        SELECT
+          explorer_key,
+          market_id,
+          title,
+          status,
+          winning_option_id,
+          current_pools_usdc,
+          total_trades,
+          stream_id,
+          stream_title,
+          host_name,
+          viewer_count,
+          first_seen_at,
+          last_seen_at,
+          resolved_at,
+          raw_data
+        FROM markets
+        WHERE
+          LOWER(
+            COALESCE(
+              status,
+              ''
+            )
+          ) IN (
+            'resolved',
+            'cancelled',
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
+          )
+          OR resolved_at IS NOT NULL
+          OR LOWER(
+            COALESCE(
+              raw_data->'market'->>'status',
+              raw_data->>'status',
+              ''
+            )
+          ) IN (
+            'resolved',
+            'cancelled',
+            'canceled',
+            'settled',
+            'complete',
+            'completed',
+            'finalized'
+          )
+        ORDER BY
+          COALESCE(
+            resolved_at,
+            last_seen_at,
+            first_seen_at
+          ) DESC
+        LIMIT 500
+      `;
 
-    const rows = await sql`
-      SELECT explorer_key, market_id, title, status, winning_option_id, current_pools_usdc, total_trades, stream_id, stream_title, host_name, viewer_count, first_seen_at, last_seen_at, resolved_at, raw_data
-      FROM markets
-      WHERE LOWER(COALESCE(status, '')) IN ('resolved', 'cancelled', 'canceled', 'settled', 'complete', 'completed', 'finalized')
-        OR resolved_at IS NOT NULL
-        OR LOWER(COALESCE(raw_data->'market'->>'status', raw_data->>'status', '')) IN ('resolved', 'cancelled', 'canceled', 'settled', 'complete', 'completed', 'finalized')
-      ORDER BY COALESCE(resolved_at, last_seen_at, first_seen_at) DESC
-      LIMIT 500
-    `;
-
-    const normalized = rows.map(normalizeDbMarket);
-
-    // 🚀 Update Cache for the next 2 seconds (ex: 2)
-    await kv.set("crsh_history_cache", normalized, { ex: 2 });
-
-    return normalized;
+    return rows.map(
+      normalizeDbMarket
+    );
   } catch (error) {
-    console.error("CRSHMARKET HISTORY DB LOAD FAILED:", error);
-    return [];
+    /*
+     * IMPORTANT:
+     * Do not silently hide database failures.
+     */
+    console.error(
+      "CRSHMARKET HISTORY DB LOAD FAILED:",
+      error
+    );
+
+    throw error;
   }
 }
 
@@ -3113,31 +3163,25 @@ export async function GET() {
       );
 
     /* -----------------------------------------
-       SAVE EVERY CURRENT SNAPSHOT
-       
-       This is what makes history persistent.
+       SAVE EVERY CURRENT SNAPSHOT (OPTIMIZED)
     ----------------------------------------- */
-
+    let canSyncDB = false;
+    
     if (sql) {
-      await Promise.all(
-        persistenceStreams.map(
-          async (
-            stream: ConvexStream
-          ) => {
+      // 🚀 WRITE DEBOUNCER: Ensures DB is updated only ONCE every 2 seconds regardless of user count
+      canSyncDB = Boolean(await kv.set("crsh_db_sync_lock", "locked", { nx: true, ex: 2 }));
+
+      if (canSyncDB) {
+        await Promise.all(
+          persistenceStreams.map(async (stream: ConvexStream) => {
             try {
-              await saveMarket(
-                stream
-              );
+              await saveMarket(stream);
             } catch (error) {
-              console.error(
-                "Market save failed:",
-                stream.market?.marketId,
-                error
-              );
+              console.error("Market save failed:", stream.market?.marketId, error);
             }
-          }
-        )
-      );
+          })
+        );
+      }
     }
 
     /* -----------------------------------------
@@ -3374,7 +3418,7 @@ export async function GET() {
        instead of only existing in memory.
     ----------------------------------------- */
 
-    if (sql && canSyncDB) {
+    if (sql) {
       await Promise.all(
         resolvedMarkets.map(
           async (
