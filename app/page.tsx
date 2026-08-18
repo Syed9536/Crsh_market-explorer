@@ -1760,26 +1760,59 @@ function HistoryCard({
   market: Market;
 }) {
   const expected = market.expected_winnings;
-
-  const winner = getWinnerLabel(
-    market.winning_option_id
-  );
-
+  const winner = getWinnerLabel(market.winning_option_id);
   const proofUrl = getResolutionProofUrl(market);
-
-  const isFallbackProof =
-    !market.resolution_proof_url;
-
+  const isFallbackProof = !market.resolution_proof_url;
   const streamUrl = getStreamUrl(market);
+
+  // Dispute System States
+  const [showDispute, setShowDispute] = useState(false);
+  const [isDisputing, setIsDisputing] = useState(false);
+  const [disputeWinner, setDisputeWinner] = useState("YES");
+  const [disputeTime, setDisputeTime] = useState("");
+  const [disputeMessage, setDisputeMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+
+  const submitDispute = async () => {
+    if (!disputeTime.trim()) {
+      setDisputeMessage({ type: 'error', text: "Please enter stream timestamp! (e.g. 01:24:30)" });
+      return;
+    }
+    
+    setIsDisputing(true);
+    setDisputeMessage(null);
+    
+    try {
+      const res = await fetch("/api/dispute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          market_id: String(market.market_id),
+          reported_winner: disputeWinner,
+          video_timestamp: disputeTime.trim(),
+        }),
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        setDisputeMessage({ type: 'success', text: "Report submitted! Community will verify." });
+        setTimeout(() => setShowDispute(false), 4000); // 4 seconds baad form close
+      } else {
+        setDisputeMessage({ type: 'error', text: data.error || "Failed to submit." });
+      }
+    } catch (err) {
+      setDisputeMessage({ type: 'error', text: "Network error occurred." });
+    } finally {
+      setIsDisputing(false);
+    }
+  };
 
   return (
     <article className="history-card">
       <div className="history-top">
         <div>
           <div className="history-game">
-            {market.stream_title ??
-              market.host_name ??
-              "CRSHMARKET"}
+            {market.stream_title ?? market.host_name ?? "CRSHMARKET"}
           </div>
 
           <div className="history-title">
@@ -1814,17 +1847,16 @@ function HistoryCard({
                 </div>
               )}
 
-              {streamUrl &&
-                streamUrl !== proofUrl && (
-                  <a
-                    className="market-link"
-                    href={streamUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    VIEW STREAM ↗
-                  </a>
-                )}
+              {streamUrl && streamUrl !== proofUrl && (
+                <a
+                  className="market-link"
+                  href={streamUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  VIEW STREAM ↗
+                </a>
+              )}
             </div>
           )}
         </div>
@@ -1835,47 +1867,13 @@ function HistoryCard({
       </div>
 
       <div className="history-info-grid">
-        <InfoBox
-          label="OPENED"
-          value={formatDate(
-            market.opened_at ??
-              market.first_seen_at
-          )}
-        />
-
-        <InfoBox
-          label="CLOSED"
-          value={formatDate(
-            market.closed_at ??
-              market.resolved_at
-          )}
-        />
-
-        <InfoBox
-          label="RECORDED"
-          value={formatDate(
-            market.recorded_at ??
-              market.resolved_at
-          )}
-        />
-
-        <InfoBox
-          label="CREDITED"
-          value={formatDate(
-            market.credited_at ??
-              market.recorded_at ??
-              market.resolved_at
-          )}
-        />
-
+        <InfoBox label="OPENED" value={formatDate(market.opened_at ?? market.first_seen_at)} />
+        <InfoBox label="CLOSED" value={formatDate(market.closed_at ?? market.resolved_at)} />
+        <InfoBox label="RECORDED" value={formatDate(market.recorded_at ?? market.resolved_at)} />
+        <InfoBox label="CREDITED" value={formatDate(market.credited_at ?? market.recorded_at ?? market.resolved_at)} />
         <InfoBox
           label="EXPECTED WINNINGS"
-          value={
-            expected !== null &&
-            expected !== undefined
-              ? formatUsd(expected)
-              : "Unavailable"
-          }
+          value={expected !== null && expected !== undefined ? formatUsd(expected) : "Unavailable"}
           highlight
           payout
         />
@@ -1883,57 +1881,68 @@ function HistoryCard({
 
       <div className="pool-grid">
         <div className="pool-box">
-          <div className="info-label">
-            YES POOL
-          </div>
-
-          <div className="info-value">
-            {formatUsd(
-              getPool(market, 0)
-            )}
-          </div>
+          <div className="info-label">YES POOL</div>
+          <div className="info-value">{formatUsd(getPool(market, 0))}</div>
         </div>
-
         <div className="pool-box">
-          <div className="info-label">
-            NO POOL
-          </div>
-
-          <div className="info-value">
-            {formatUsd(
-              getPool(market, 1)
-            )}
-          </div>
+          <div className="info-label">NO POOL</div>
+          <div className="info-value">{formatUsd(getPool(market, 1))}</div>
         </div>
       </div>
 
       <div className="history-bottom">
-        <InfoBox
-          label="TRADES"
-          value={Number(
-            market.total_trades ?? 0
-          ).toLocaleString()}
-        />
-
-        <InfoBox
-          label="VIEWERS"
-          value={Number(
-            market.viewer_count ?? 0
-          ).toLocaleString()}
-        />
-
-        <InfoBox
-          label="RESOLVED"
-          value={formatDate(
-            market.resolved_at
-          )}
-        />
-
-        <InfoBox
-          label="STATUS"
-          value={market.status ?? "unknown"}
-        />
+        <InfoBox label="TRADES" value={Number(market.total_trades ?? 0).toLocaleString()} />
+        <InfoBox label="VIEWERS" value={Number(market.viewer_count ?? 0).toLocaleString()} />
+        <InfoBox label="RESOLVED" value={formatDate(market.resolved_at)} />
+        <InfoBox label="STATUS" value={market.status ?? "unknown"} />
       </div>
+
+      {/* DISPUTE SYSTEM UI */}
+      {normalizeStatus(market.status) !== "cancelled" && (
+        <>
+          <button 
+            className="dispute-btn" 
+            onClick={() => setShowDispute(!showDispute)}
+          >
+            {showDispute ? "Cancel Report" : "⚠️ Report Wrong Settlement"}
+          </button>
+
+          {showDispute && (
+            <div className="dispute-form">
+              <label>Correct Winner Should Be:</label>
+              <select 
+                value={disputeWinner} 
+                onChange={(e) => setDisputeWinner(e.target.value)}
+              >
+                <option value="YES">YES</option>
+                <option value="NO">NO</option>
+              </select>
+
+              <label>Exact Stream Timestamp of Evidence (e.g., 01:25:40):</label>
+              <input 
+                type="text" 
+                placeholder="00:00:00" 
+                value={disputeTime} 
+                onChange={(e) => setDisputeTime(e.target.value)}
+              />
+
+              <button 
+                className="dispute-submit" 
+                onClick={submitDispute} 
+                disabled={isDisputing}
+              >
+                {isDisputing ? "Submitting..." : "Submit Proof"}
+              </button>
+
+              {disputeMessage && (
+                <div className={`dispute-msg ${disputeMessage.type}`}>
+                  {disputeMessage.text}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
     </article>
   );
 }
