@@ -1602,6 +1602,111 @@ const activeStreams = (data?.value?.activeStreams ?? []).filter(
   );
 }
 
+/* ⬇️ DISPUTE FORM CSS ⬇️ */
+        .dispute-btn {
+          margin-top: 18px;
+          width: 100%;
+          padding: 12px;
+          background: rgba(255, 64, 81, 0.08);
+          border: 1px solid rgba(255, 64, 81, 0.3);
+          color: var(--red);
+          border-radius: 10px;
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: 0.2s ease;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .dispute-btn:hover {
+          background: rgba(255, 64, 81, 0.15);
+        }
+
+        .dispute-form {
+          margin-top: 14px;
+          padding: 16px;
+          background: var(--panel-2);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          animation: fade-in 0.3s ease;
+        }
+
+        .dispute-form label {
+          display: block;
+          font-size: 10px;
+          font-weight: 600;
+          color: var(--muted);
+          margin-bottom: 8px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .dispute-form select, 
+        .dispute-form input {
+          width: 100%;
+          padding: 12px;
+          margin-bottom: 16px;
+          background: var(--input);
+          border: 1px solid var(--border);
+          color: var(--text);
+          border-radius: 8px;
+          font-size: 13px;
+          outline: none;
+        }
+
+        .dispute-form select:focus, 
+        .dispute-form input:focus {
+          border-color: var(--red);
+          box-shadow: 0 0 0 3px rgba(255, 64, 81, 0.1);
+        }
+
+        .dispute-submit {
+          width: 100%;
+          padding: 12px;
+          background: var(--red);
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          font-weight: 800;
+          font-size: 12px;
+          cursor: pointer;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+        }
+
+        .dispute-submit:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .dispute-msg {
+          margin-top: 14px;
+          font-size: 11px;
+          padding: 10px;
+          border-radius: 8px;
+          font-weight: 600;
+          text-align: center;
+        }
+
+        .dispute-msg.error { 
+          background: rgba(255, 64, 81, 0.1); 
+          color: var(--red); 
+          border: 1px solid rgba(255, 64, 81, 0.2);
+        }
+
+        .dispute-msg.success { 
+          background: rgba(0, 216, 102, 0.1); 
+          color: var(--green); 
+          border: 1px solid rgba(0, 216, 102, 0.2);
+        }
+
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(-5px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        /* ⬆️ DISPUTE FORM CSS ⬆️ */
+
 function LiveMarketCard({ stream }: { stream: LiveStream }) {
   const market = stream.market;
 
