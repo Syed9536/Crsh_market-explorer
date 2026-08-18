@@ -1597,11 +1597,6 @@ const activeStreams = (data?.value?.activeStreams ?? []).filter(
         }
         /* ⬆️ NAYA ANIMATION CODE ⬆️ */
 
-      `}</style>
-    </main>
-  );
-}
-
 /* ⬇️ DISPUTE FORM CSS ⬇️ */
         .dispute-btn {
           margin-top: 18px;
@@ -1706,6 +1701,13 @@ const activeStreams = (data?.value?.activeStreams ?? []).filter(
           to { opacity: 1; transform: translateY(0); }
         }
         /* ⬆️ DISPUTE FORM CSS ⬆️ */
+
+
+      `}</style>
+    </main>
+  );
+}
+
 
 function LiveMarketCard({ stream }: { stream: LiveStream }) {
   const market = stream.market;
