@@ -1558,43 +1558,72 @@ const activeStreams = (data?.value?.activeStreams ?? []).filter(
   );
 }
 
-function LiveMarketCard({
-  stream,
-}: {
-  stream: LiveStream;
-}) {
+function LiveMarketCard({ stream }: { stream: LiveStream }) {
   const market = stream.market;
+
+  // Har 50ms me time update karne ke liye state
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 50);
+    return () => clearInterval(interval);
+  }, []);
 
   if (!market) {
     return null;
   }
 
   const yes = getLivePool(stream, 0);
-
   const no = getLivePool(stream, 1);
-
   const percentages = calculateLivePercentage(yes, no);
-
-  const ending = isResolved(market.status);
-
   const streamUrl = getStreamUrl(stream);
+
+  // Timer & Progress Bar Logic
+  const rawEndsAt = market.countdownEndsAtMs ?? market.bettingClosedAtMs ?? market.lockTime;
+  const endsAt = rawEndsAt ? Number(rawEndsAt) : null;
+  
+  // Agar start time API me nahi hai, to 60 seconds ka default window man lete hain smooth bar ke liye
+  const rawStartsAt = market.countdownStartedAtMs;
+  const startsAt = rawStartsAt ? Number(rawStartsAt) : (endsAt ? endsAt - 60000 : null);
+
+  let isLocked = false;
+  let timeLeft = 0;
+  let progress = 100;
+  let timeString = "";
+
+  if (endsAt) {
+    timeLeft = Math.max(0, endsAt - now);
+    isLocked = timeLeft === 0 || normalizeStatus(market.status) === "locked";
+
+    if (startsAt && endsAt > startsAt) {
+      const totalDuration = endsAt - startsAt;
+      progress = Math.max(0, Math.min(100, (timeLeft / totalDuration) * 100));
+    } else {
+      progress = timeLeft > 0 ? 100 : 0;
+    }
+
+    const seconds = Math.ceil(timeLeft / 1000);
+    if (seconds > 60) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      timeString = `${m}:${s.toString().padStart(2, "0")}`;
+    } else {
+      timeString = `${seconds}s`;
+    }
+  }
+
+  const isWarning = timeLeft > 0 && timeLeft <= 10000; // Last 10 seconds
 
   return (
     <article className="market-card">
       <div className="market-top">
-        <div className="game-label">
-          {stream.title ?? "Market"}
-        </div>
-
+        <div className="game-label">{stream.title ?? "Market"}</div>
         <div className="live-pill">
-          <span className="green-dot" />
-          LIVE
+          <span className="green-dot" /> LIVE
         </div>
       </div>
 
-      <div className="question">
-        {market.title ?? "Untitled market"}
-      </div>
+      <div className="question">{market.title ?? "Untitled market"}</div>
 
       {streamUrl && (
         <div className="market-links">
@@ -1612,70 +1641,48 @@ function LiveMarketCard({
       <div className="options">
         <div className="option yes">
           <div className="option-head">
-            <span className="option-label">
-              YES
-            </span>
-
-            <span className="percentage">
-              {percentages.yes.toFixed(1)}%
-            </span>
+            <span className="option-label">YES</span>
+            <span className="percentage">{percentages.yes.toFixed(1)}%</span>
           </div>
-
           <div className="bar">
-            <div
-              className="bar-fill"
-              style={{
-                width: `${percentages.yes}%`,
-              }}
-            />
+            <div className="bar-fill" style={{ width: `${percentages.yes}%` }} />
           </div>
-
-          <div className="pool-label">
-            Pool {formatUsd(yes)}
-          </div>
+          <div className="pool-label">Pool {formatUsd(yes)}</div>
         </div>
 
         <div className="option no">
           <div className="option-head">
-            <span className="option-label">
-              NO
-            </span>
-
-            <span className="percentage">
-              {percentages.no.toFixed(1)}%
-            </span>
+            <span className="option-label">NO</span>
+            <span className="percentage">{percentages.no.toFixed(1)}%</span>
           </div>
-
           <div className="bar">
-            <div
-              className="bar-fill"
-              style={{
-                width: `${percentages.no}%`,
-              }}
-            />
+            <div className="bar-fill" style={{ width: `${percentages.no}%` }} />
           </div>
-
-          <div className="pool-label">
-            Pool {formatUsd(no)}
-          </div>
+          <div className="pool-label">Pool {formatUsd(no)}</div>
         </div>
       </div>
 
       <div className="ending-box">
-        <div className="ending-title">
-          MARKET ENDS IN
+        <div className="ending-header">
+          <div className="ending-title">MARKET ENDS IN</div>
+          {endsAt && !isLocked && (
+            <div className={`ending-time ${isWarning ? 'pulse-text' : ''}`}>
+              {timeString}
+            </div>
+          )}
         </div>
 
-        <div className="ending-value">
-          {ending ? "ENDING" : "LIVE"}
+        <div className={`ending-value ${isLocked ? 'locked-text' : ''}`}>
+          {isLocked ? "LOCKED" : "LIVE"}
         </div>
 
-        <div className="bar">
+        <div className="bar progress-bg">
           <div
-            className="bar-fill"
+            className={`bar-fill ${isWarning ? 'warning-glow' : ''}`}
             style={{
-              width: ending ? "0%" : "100%",
-              background: "var(--red)",
+              width: isLocked ? "0%" : `${progress}%`,
+              background: isLocked ? "var(--muted-2)" : "var(--red)",
+              transition: "width 0.05s linear",
             }}
           />
         </div>
@@ -1683,36 +1690,19 @@ function LiveMarketCard({
 
       <div className="market-meta">
         <div className="meta-item">
-          <div className="meta-label">
-            MARKET
-          </div>
-
+          <div className="meta-label">MARKET</div>
+          <div className="meta-value">#{market.marketId ?? "—"}</div>
+        </div>
+        <div className="meta-item">
+          <div className="meta-label">VIEWERS</div>
           <div className="meta-value">
-            #{market.marketId ?? "—"}
+            {Number(stream.viewerCount ?? 0).toLocaleString()}
           </div>
         </div>
-
         <div className="meta-item">
-          <div className="meta-label">
-            VIEWERS
-          </div>
-
+          <div className="meta-label">TRADES</div>
           <div className="meta-value">
-            {Number(
-              stream.viewerCount ?? 0
-            ).toLocaleString()}
-          </div>
-        </div>
-
-        <div className="meta-item">
-          <div className="meta-label">
-            TRADES
-          </div>
-
-          <div className="meta-value">
-            {Number(
-              market.totalTrades ?? 0
-            ).toLocaleString()}
+            {Number(market.totalTrades ?? 0).toLocaleString()}
           </div>
         </div>
       </div>
