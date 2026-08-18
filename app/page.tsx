@@ -442,7 +442,10 @@ export default function HomePage() {
     };
   }, [fetchMarkets]);
 
-  const activeStreams = data?.value?.activeStreams ?? [];
+ // API se aane wale active streams me se unko filter out kar do jo resolve ho chuke hain
+const activeStreams = (data?.value?.activeStreams ?? []).filter(
+  (stream) => !isResolved(stream.market?.status)
+);
 
   const resolvedMarkets = data?.value?.resolvedMarkets ?? [];
 
