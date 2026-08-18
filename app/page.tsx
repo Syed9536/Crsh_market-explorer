@@ -9,6 +9,7 @@ import {
 } from "react";
 
 type Market = {
+  explorer_key?: string;
   market_id: string;
   title?: string;
   status?: string;
@@ -620,7 +621,10 @@ export default function HomePage() {
               <div className="history-list">
                 {filteredHistory.map((market) => (
                   <HistoryCard
-                    key={market.market_id}
+                    key={
+                      market.explorer_key ??
+                      market.market_id
+                    }
                     market={market}
                   />
                 ))}
@@ -1132,6 +1136,21 @@ export default function HomePage() {
 
         .market-link.proof-link:hover {
           border-color: var(--purple);
+        }
+
+        .proof-link-wrap {
+          display: inline-flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .proof-link-note {
+          font-size: 8px;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+          color: var(--muted);
+          opacity: 0.75;
+          cursor: help;
         }
 
         .ending-box {
@@ -1696,6 +1715,9 @@ function HistoryCard({
 
   const proofUrl = getResolutionProofUrl(market);
 
+  const isFallbackProof =
+    !market.resolution_proof_url;
+
   const streamUrl = getStreamUrl(market);
 
   return (
@@ -1719,14 +1741,25 @@ function HistoryCard({
           {(proofUrl || streamUrl) && (
             <div className="market-links">
               {proofUrl && (
-                <a
-                  className="market-link proof-link"
-                  href={proofUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  VIEW RESOLUTION PROOF ↗
-                </a>
+                <div className="proof-link-wrap">
+                  <a
+                    className="market-link proof-link"
+                    href={proofUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    VIEW RESOLUTION PROOF ↗
+                  </a>
+
+                  {isFallbackProof && (
+                    <span
+                      className="proof-link-note"
+                      title="CRSH reuses market ID numbers over time, so this link may show a different market than the one below."
+                    >
+                      may not match exactly ⓘ
+                    </span>
+                  )}
+                </div>
               )}
 
               {streamUrl &&
