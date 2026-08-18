@@ -25,7 +25,8 @@ const DATABASE_URL =
 const sql = DATABASE_URL
   ? neon(DATABASE_URL)
   : null;
-
+// 🚀 INJECT SPOT 1 (Line ~25 ke aas-paas)
+const hasKV = Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
 const USDC_BASE = 1_000_000;
 const HYPOTHETICAL_BET = 10;
 
@@ -2694,6 +2695,7 @@ function normalizeDbMarket(
    LOAD RESOLVED MARKETS
 ========================================================= */
 
+// 🚀 INJECT SPOT 2: Replace whole getResolvedMarkets function
 async function getResolvedMarkets() {
   if (!sql) {
     console.error("CRSHMARKET HISTORY: Database connection missing.");
@@ -2701,10 +2703,16 @@ async function getResolvedMarkets() {
   }
 
   try {
-    // 🚀 HIGH-SPEED READ CACHE: Check Vercel KV First
-    const cachedHistory = await kv.get("crsh_history_cache");
-    if (cachedHistory && Array.isArray(cachedHistory)) {
-      return cachedHistory;
+    // Check KV only if configured
+    if (hasKV) {
+      try {
+        const cachedHistory = await kv.get("crsh_history_cache");
+        if (cachedHistory && Array.isArray(cachedHistory)) {
+          return cachedHistory;
+        }
+      } catch (e) {
+        // Ignore KV error and fallback to DB
+      }
     }
 
     const rows = await sql`
@@ -2719,8 +2727,12 @@ async function getResolvedMarkets() {
 
     const normalized = rows.map(normalizeDbMarket);
 
-    // 🚀 Update Cache for the next 2 seconds (ex: 2)
-    await kv.set("crsh_history_cache", normalized, { ex: 2 });
+    // Update Cache only if KV is available
+    if (hasKV) {
+      try {
+        await kv.set("crsh_history_cache", normalized, { ex: 2 });
+      } catch (e) {}
+    }
 
     return normalized;
   } catch (error) {
@@ -3121,27 +3133,25 @@ export async function GET() {
     ----------------------------------------- */
 
     if (sql) {
-      canSyncDB = Boolean(await kv.set("crsh_db_sync_lock", "locked", { nx: true, ex: 2 }));
+      if (hasKV) {
+        try {
+          canSyncDB = Boolean(await kv.set("crsh_db_sync_lock", "locked", { nx: true, ex: 2 }));
+        } catch (e) {
+          canSyncDB = true; // Fallback if KV fails
+        }
+      } else {
+        canSyncDB = true; // Fallback if no KV
+      }
 
       if (canSyncDB) {
         await Promise.all(
-          persistenceStreams.map(
-            async (
-              stream: ConvexStream
-            ) => {
-              try {
-                await saveMarket(
-                  stream
-                );
-              } catch (error) {
-                console.error(
-                  "Market save failed:",
-                  stream.market?.marketId,
-                  error
-                );
-              }
+          persistenceStreams.map(async (stream: ConvexStream) => {
+            try {
+              await saveMarket(stream);
+            } catch (error) {
+              console.error("Market save failed:", stream.market?.marketId, error);
             }
-          )
+          })
         );
       }
     }
